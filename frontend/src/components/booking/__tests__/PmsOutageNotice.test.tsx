@@ -117,4 +117,51 @@ describe('PmsOutageNotice', () => {
 
     expect(screen.getByRole('alert')).toBe(screen.getByTestId('pms-outage-notice'));
   });
+
+  // ==========================================================================
+  // A19 — the reason changes what is said
+  // ==========================================================================
+
+  /**
+   * `channel_disabled` is the PMS saying the channel is switched OFF, not
+   * that it fell over. "Temporarily unavailable" invites a guest to sit and
+   * retry something that will not come back on its own, so the copy has to
+   * say closed.
+   */
+  it('says the channel is closed, not broken, when the PMS says it is disabled', () => {
+    vi.stubEnv('VITE_DESK_PHONE_HF', '02 123 4567');
+
+    render(<PmsOutageNotice property="hf" reason="channel_disabled" />);
+
+    const text = screen.getByTestId('pms-outage-notice').textContent ?? '';
+    expect(text).toContain('ขณะนี้ปิดรับจองออนไลน์ กรุณาติดต่อแผนกต้อนรับ โทร 02 123 4567');
+    expect(text).toContain('Online booking is closed right now.');
+    expect(text).not.toContain('ระบบจองขัดข้องชั่วคราว');
+  });
+
+  it('drops the number from the closed copy too when none is configured', () => {
+    vi.stubEnv('VITE_DESK_PHONE_HF', '');
+
+    render(<PmsOutageNotice property="hf" reason="channel_disabled" />);
+
+    expect(screen.getByText('ขณะนี้ปิดรับจองออนไลน์ กรุณาติดต่อแผนกต้อนรับ')).toBeInTheDocument();
+  });
+
+  /**
+   * Every other reason really is "try again shortly" — an unreachable PMS,
+   * a rotated token, an inventory lock the backend already spent its retry
+   * on — so the default copy stands.
+   */
+  it.each(['unauthorized', 'inventory_lock_timeout'] as const)(
+    'keeps the temporary-outage copy for %s',
+    (reason) => {
+      vi.stubEnv('VITE_DESK_PHONE_HF', '02 123 4567');
+
+      render(<PmsOutageNotice property="hf" reason={reason} />);
+
+      expect(screen.getByTestId('pms-outage-notice').textContent).toContain(
+        'ระบบจองขัดข้องชั่วคราว',
+      );
+    },
+  );
 });

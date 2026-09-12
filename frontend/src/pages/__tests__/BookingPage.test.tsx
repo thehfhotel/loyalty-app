@@ -417,6 +417,184 @@ describe('BookingPage — channel flow (property → rooms → confirm → payme
     expect(screen.queryByTestId('pms-outage-notice')).not.toBeInTheDocument();
   });
 
+  // ==========================================================================
+  // A19 — the PMS's machine reason picks the copy
+  // ==========================================================================
+
+  /**
+   * `sold_out` and `last_room_held_for_desk` are the **same 409** and want
+   * opposite advice, so the page must branch on `reason` and not on the
+   * status. The shipped Thai for each is asserted against the real bundles
+   * in `BookingErrorNotice`'s own test; what is pinned here is that the
+   * page picks the right one and stops toasting the backend's words.
+   */
+  it('shows the sold-out notice, not a toast, when the PMS says sold_out', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockRejectedValue(
+      new ApiError('Sold out', 'conflict', 409, 'Sold out', 'sold_out'),
+    );
+    render(<BookingPage />, { wrapper });
+
+    await confirmBooking(user);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('booking-sold-out-notice')).toBeInTheDocument();
+    });
+    expect(mockToastError).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('pms-outage-notice')).not.toBeInTheDocument();
+  });
+
+  /**
+   * The point of the button: the dates are what the guest has to change, so
+   * pressing it puts them back on step 1 with the room choice dropped —
+   * keeping a selection made against sold-out dates is how you get them to
+   * press "book" on the same room again.
+   */
+  it('sends a sold-out guest back to the dates step', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockRejectedValue(
+      new ApiError('Sold out', 'conflict', 409, 'Sold out', 'sold_out'),
+    );
+    render(<BookingPage />, { wrapper });
+
+    await confirmBooking(user);
+    await waitFor(() => {
+      expect(screen.getByTestId('pick-other-dates')).toBeInTheDocument();
+    });
+
+    await act(async () => {
+      await user.click(screen.getByTestId('pick-other-dates'));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('check-in-date')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('booking-sold-out-notice')).not.toBeInTheDocument();
+  });
+
+  /**
+   * The one refusal where the guest can still get the room: the desk copy
+   * and the number, not "pick other dates".
+   */
+  it('shows the desk copy when the last room is held for the desk', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockRejectedValue(
+      new ApiError('Held', 'conflict', 409, 'Held', 'last_room_held_for_desk'),
+    );
+    render(<BookingPage />, { wrapper });
+
+    await confirmBooking(user);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('booking-desk-held-notice')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('booking-sold-out-notice')).not.toBeInTheDocument();
+    expect(mockToastError).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A closed channel is still the outage panel, but it must be able to say
+   * "closed" rather than "temporarily unavailable" — so the reason has to
+   * reach the component, not stop at the page.
+   */
+  it('passes a disabled channel through to the outage notice as a reason', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockRejectedValue(
+      new ApiError('Closed', 'external_service_unavailable', 503, 'Closed', 'channel_disabled'),
+    );
+    render(<BookingPage />, { wrapper });
+
+    await confirmBooking(user);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pms-outage-notice')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('pms-outage-notice')).toHaveAttribute(
+      'data-reason',
+      'channel_disabled',
+    );
+  });
+
+  /**
+   * A reason this build has never heard of must not render a raw machine
+   * key at a guest — it degrades to the generic outage panel.
+   */
+  it('degrades an unknown reason to the generic outage panel', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockRejectedValue(
+      new ApiError(
+        'Something new',
+        'external_service_unavailable',
+        503,
+        'Something new',
+        'rate_limited_by_the_moon',
+      ),
+    );
+    render(<BookingPage />, { wrapper });
+
+    await confirmBooking(user);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('pms-outage-notice')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('pms-outage-notice')).not.toHaveAttribute('data-reason');
+    expect(document.body.textContent).not.toContain('rate_limited_by_the_moon');
+  });
+
+  /**
+   * The one named reason that stays a toast: its own sentence is the whole
+   * answer, and it has nothing to do with the desk. Putting it behind a
+   * call-reception panel would send a guest to the phone over a duplicate
+   * request they can simply reissue.
+   */
+  it('keeps a reused idempotency key as a toast, not a desk panel', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockRejectedValue(
+      new ApiError(
+        'This booking request has already been sent with different details.',
+        'conflict',
+        409,
+        'This booking request has already been sent with different details.',
+        'idempotency_key_mismatch',
+      ),
+    );
+    render(<BookingPage />, { wrapper });
+
+    await confirmBooking(user);
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith(
+        'This booking request has already been sent with different details.',
+      );
+    });
+    expect(screen.queryByTestId('pms-outage-notice')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('booking-sold-out-notice')).not.toBeInTheDocument();
+  });
+
+  // ==========================================================================
+  // B16 — the desk footer is on every screen of the flow
+  // ==========================================================================
+
+  /**
+   * The in-chat bot is out of scope, so this line is the entire support
+   * path. It has to survive every step, including the payment step where a
+   * guest is most likely to get stuck.
+   */
+  it('carries the call-the-desk footer through every step of the flow', async () => {
+    const user = userEvent.setup();
+    mockCreateChannelBooking.mockResolvedValue(SAMPLE_BOOKING);
+    render(<BookingPage />, { wrapper });
+
+    expect(screen.getByTestId('desk-contact-footer')).toBeInTheDocument();
+
+    await confirmBooking(user);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('slip-dropzone')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('desk-contact-footer')).toBeInTheDocument();
+  });
+
   it('clears the outage notice once a retry succeeds', async () => {
     const user = userEvent.setup();
     mockCreateChannelBooking.mockRejectedValueOnce(

@@ -413,3 +413,31 @@ describe('DepositLinkPage', () => {
     });
   });
 });
+
+/**
+ * B16 — the deposit/slip-upload screen is the one a guest is most likely to
+ * be stuck on at 22:00, so it carries the same call-the-desk footer as the
+ * rest of the LIFF flow, with the 24-hour promise the owner confirmed.
+ */
+describe('DepositLinkPage — desk contact footer (B16)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetDepositPage.mockResolvedValue(BASE_PAGE);
+    goTo('/d', `#${TOKEN}`);
+  });
+
+  it('renders the shared footer on the live payment screen', async () => {
+    await renderSettled();
+
+    const footers = screen.getAllByTestId('desk-contact-footer');
+    expect(footers.length).toBeGreaterThan(0);
+    expect(footers.map((f) => f.textContent ?? '').join(' ')).toContain('ตลอด 24 ชั่วโมง');
+  });
+
+  it('keeps a way out on a link that would not load at all', async () => {
+    mockGetDepositPage.mockRejectedValue(new Error('network down'));
+    await renderSettled();
+
+    expect(screen.getByTestId('desk-contact-footer')).toBeInTheDocument();
+  });
+});

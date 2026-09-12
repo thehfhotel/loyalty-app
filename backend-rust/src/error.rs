@@ -22,6 +22,20 @@ pub struct ErrorResponse {
     /// Optional field-level error details (for validation errors)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<HashMap<String, Vec<String>>>,
+    /// Machine-readable *sub*-reason, when the failure came from a
+    /// dependency that names its own (A19: the PMS booking channel).
+    ///
+    /// Sits **alongside** `error` and `message`, it does not replace
+    /// either: `error` stays the app's own key (`"conflict"`,
+    /// `"external_service_unavailable"`) so everything that already
+    /// branches on it is unchanged, and `reason` carries the finer verdict
+    /// the UI needs — `"sold_out"` and `"last_room_held_for_desk"` are the
+    /// same `conflict` with opposite advice for the guest.
+    ///
+    /// Absent on every error that has no such reason, so a client can test
+    /// for its presence rather than for a sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 impl ErrorResponse {
@@ -31,6 +45,21 @@ impl ErrorResponse {
             error: error.into(),
             message: message.into(),
             details: None,
+            reason: None,
+        }
+    }
+
+    /// Same, carrying the dependency's own machine reason (see `reason`).
+    pub fn with_reason(
+        error: impl Into<String>,
+        message: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            error: error.into(),
+            message: message.into(),
+            details: None,
+            reason: Some(reason.into()),
         }
     }
 
@@ -44,6 +73,7 @@ impl ErrorResponse {
             error: error.into(),
             message: message.into(),
             details: Some(details),
+            reason: None,
         }
     }
 }
@@ -181,6 +211,26 @@ pub enum AppError {
     #[error("Service unavailable: {0}")]
     ServiceUnavailable(String),
 
+    /// The PMS booking channel answered with a machine `reason` (A19).
+    ///
+    /// One variant rather than one per reason: the *only* things that
+    /// differ downstream are the status (409 when the PMS decided about
+    /// this booking, 503 when it could not serve it) and the token, and
+    /// both are carried here. `error_code()` deliberately keeps answering
+    /// the pre-A19 keys — `conflict` / `external_service_unavailable` —
+    /// so every existing caller that branches on the code, including
+    /// `frontend/src/utils/pmsOutage.ts`, behaves exactly as before while
+    /// `reason` carries the new detail.
+    #[error("PMS channel refused ({reason}): {message}")]
+    PmsChannel {
+        /// `PmsReason::as_str()` — the wire token, re-emitted verbatim.
+        reason: &'static str,
+        /// True when no retry can change the answer.
+        definitive: bool,
+        /// Guest-facing copy; returned verbatim as `message`.
+        message: String,
+    },
+
     // HTTP client errors
     #[error("HTTP request error: {0}")]
     HttpRequest(#[from] reqwest::Error),
@@ -262,6 +312,14 @@ impl AppError {
             Self::ExternalServiceUnavailable(_) => "external_service_unavailable",
             Self::ExternalServiceTimeout(_) => "external_service_timeout",
             Self::ServiceUnavailable(_) => "service_unavailable",
+            // Unchanged keys on purpose — see the variant's doc comment.
+            Self::PmsChannel { definitive, .. } => {
+                if *definitive {
+                    "conflict"
+                } else {
+                    "external_service_unavailable"
+                }
+            },
 
             // HTTP client errors
             Self::HttpRequest(_) => "http_request_error",
@@ -335,6 +393,13 @@ impl AppError {
             Self::EmailService(_) => StatusCode::BAD_GATEWAY,
             Self::ExternalServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::PmsChannel { definitive, .. } => {
+                if *definitive {
+                    StatusCode::CONFLICT
+                } else {
+                    StatusCode::SERVICE_UNAVAILABLE
+                }
+            },
             Self::ExternalServiceTimeout(_) => StatusCode::GATEWAY_TIMEOUT,
 
             // HTTP client errors
@@ -418,6 +483,9 @@ impl AppError {
             },
             // Already caller-facing copy — see the variant's doc comment.
             Self::ServiceUnavailable(msg) => msg.clone(),
+            // Likewise: written for a guest, and the fallback for any
+            // client that has no copy of its own for this reason.
+            Self::PmsChannel { message, .. } => message.clone(),
 
             // HTTP client errors - hide details
             Self::HttpRequest(_) => "External service error".to_string(),
@@ -435,6 +503,17 @@ impl AppError {
 
             // Cache miss is somewhat safe
             Self::CacheMiss(key) => format!("Cache key not found: {}", key),
+        }
+    }
+
+    /// The dependency's own machine reason, when there is one.
+    ///
+    /// `None` for every error that does not carry one, which is why
+    /// `ErrorResponse::reason` is skipped rather than sent empty.
+    pub fn reason(&self) -> Option<&'static str> {
+        match self {
+            Self::PmsChannel { reason, .. } => Some(reason),
+            _ => None,
         }
     }
 
@@ -463,7 +542,10 @@ impl IntoResponse for AppError {
             AppError::ValidationWithDetails { details, .. } => {
                 ErrorResponse::with_details(error_code, message, details.clone())
             },
-            _ => ErrorResponse::new(error_code, message),
+            _ => match self.reason() {
+                Some(reason) => ErrorResponse::with_reason(error_code, message, reason),
+                None => ErrorResponse::new(error_code, message),
+            },
         };
 
         (status, Json(body)).into_response()

@@ -300,6 +300,179 @@ pub struct PmsBookingCreated {
     pub replayed: bool,
 }
 
+/// The machine `reason` the PMS channel API puts on **every** error body.
+///
+/// Since new-hotel #311 the channel answers a stable token alongside the
+/// status, so this client no longer has to infer intent from a number that
+/// several unrelated conditions share. The two 409s are the reason this
+/// type exists: `sold_out` and `last_room_held_for_desk` are both "409
+/// Conflict" and both definitive, but one means *pick other dates* and the
+/// other means *phone the desk, the room is there* — advice a guest acts on
+/// differently, and which the status alone cannot carry.
+///
+/// The token is part of the wire contract in both directions: it is parsed
+/// here and re-emitted verbatim as the `reason` field of the app's own
+/// error body (`ErrorResponse::reason`), so the LIFF flow picks its Thai
+/// copy from the same string the PMS chose. Renaming a variant's
+/// [`as_str`](Self::as_str) breaks the frontend, not just this module.
+///
+/// **Unknown reasons are not an error.** `from_body` answers `None` for a
+/// token this build has never heard of, and the caller falls back to the
+/// status-shaped mapping that predates this type — a PMS that grows a new
+/// reason must not turn every booking into a 500 here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PmsReason {
+    /// 503 — `LOYALTY_CHANNEL_ENABLED=false`. The channel is *closed*, not
+    /// broken: no amount of retrying opens it, and the guest copy has to
+    /// say so rather than "temporarily unavailable".
+    ChannelDisabled,
+    /// 401 — `LOYALTY_CHANNEL_TOKEN` rotated out from under us. Ours to
+    /// fix, so the guest is told the system is down, never "rejected".
+    Unauthorized,
+    /// 409 — no room of this type is free for these dates. Definitive.
+    SoldOut,
+    /// 409 — rooms remain, but the last `LOYALTY_CHANNEL_LAST_ROOM_FLOOR`
+    /// of them are reserved for the desk (new-hotel #311). Definitive, and
+    /// the one refusal where the guest can still get the room by phoning.
+    /// The body also carries `free_rooms` and `floor`; neither is read here
+    /// because neither changes what the guest is told.
+    LastRoomHeldForDesk,
+    /// 503 + `Retry-After: 1` — the PMS could not take its inventory lock
+    /// in time. Transient by construction, and the only reason this client
+    /// retries on its own.
+    InventoryLockTimeout,
+    /// 422 — this `Idempotency-Key` was already used with a *different*
+    /// booking. Definitive: the stored request for that key will never
+    /// match this one, so the guest must start a new booking.
+    IdempotencyKeyMismatch,
+}
+
+impl PmsReason {
+    /// The wire token, verbatim. This is what the frontend switches on.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ChannelDisabled => "channel_disabled",
+            Self::Unauthorized => "unauthorized",
+            Self::SoldOut => "sold_out",
+            Self::LastRoomHeldForDesk => "last_room_held_for_desk",
+            Self::InventoryLockTimeout => "inventory_lock_timeout",
+            Self::IdempotencyKeyMismatch => "idempotency_key_mismatch",
+        }
+    }
+
+    /// Parse one token. Unknown tokens answer `None` — see the type docs.
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim() {
+            "channel_disabled" => Some(Self::ChannelDisabled),
+            "unauthorized" => Some(Self::Unauthorized),
+            "sold_out" => Some(Self::SoldOut),
+            "last_room_held_for_desk" => Some(Self::LastRoomHeldForDesk),
+            "inventory_lock_timeout" => Some(Self::InventoryLockTimeout),
+            "idempotency_key_mismatch" => Some(Self::IdempotencyKeyMismatch),
+            _ => None,
+        }
+    }
+
+    /// Pull `reason` out of a PMS error body.
+    ///
+    /// Tolerant on purpose: a body that is not JSON, has no `reason`, or
+    /// carries a token this build does not know answers `None`. The extra
+    /// fields the PMS sends with some reasons (`free_rooms`, `floor`) are
+    /// ignored rather than modelled — they do not change what the guest is
+    /// told, and modelling them would make an added field a parse failure.
+    pub fn from_body(body: &str) -> Option<Self> {
+        #[derive(Deserialize)]
+        struct ReasonOnly {
+            reason: Option<String>,
+        }
+        serde_json::from_str::<ReasonOnly>(body)
+            .ok()?
+            .reason
+            .as_deref()
+            .and_then(Self::parse)
+    }
+
+    /// Did the PMS decide about **this booking**, such that no retry — by
+    /// this client, by the guest, or by a human — can change the answer?
+    ///
+    /// This is the same split `PmsActionError` draws between `Refused` and
+    /// `Unavailable`, expressed per reason instead of per status: it is
+    /// what turns into 409-vs-503 on our own response, and therefore into
+    /// "the answer is no" vs "try again" for everything downstream.
+    pub const fn is_definitive(self) -> bool {
+        match self {
+            Self::SoldOut | Self::LastRoomHeldForDesk | Self::IdempotencyKeyMismatch => true,
+            // `inventory_lock_timeout` is definitive only *after* this
+            // client has spent its one retry; by the time it is mapped it
+            // is still an outage, because trying later can still work.
+            Self::ChannelDisabled | Self::Unauthorized | Self::InventoryLockTimeout => false,
+        }
+    }
+
+    /// The sentence a guest is shown when the frontend has no copy of its
+    /// own for this reason.
+    ///
+    /// English, and deliberately so: the LIFF flow renders Thai first from
+    /// its own locale files keyed on [`as_str`](Self::as_str), and this is
+    /// the fallback for everything else that reads the API — the admin
+    /// tools, a curl, a client build older than the reason. It must never
+    /// name the PMS, a header or a flag.
+    pub const fn guest_message(self) -> &'static str {
+        match self {
+            Self::ChannelDisabled => {
+                "Online booking is closed right now. Please contact the front desk."
+            },
+            Self::Unauthorized | Self::InventoryLockTimeout => {
+                "The booking system is temporarily unavailable. Please try again shortly, or \
+                 contact the front desk."
+            },
+            Self::SoldOut => "This room type is sold out for the dates you chose.",
+            Self::LastRoomHeldForDesk => {
+                "The last room for these dates is kept for booking with the hotel directly. \
+                 Please call the front desk."
+            },
+            Self::IdempotencyKeyMismatch => IDEMPOTENCY_KEY_REUSED_MESSAGE,
+        }
+    }
+
+    /// The app error this reason becomes — 409 when definitive, 503 when
+    /// not, with the token riding out to the caller as `reason`.
+    pub fn into_app_error(self) -> AppError {
+        AppError::PmsChannel {
+            reason: self.as_str(),
+            definitive: self.is_definitive(),
+            message: self.guest_message().to_string(),
+        }
+    }
+}
+
+/// How long to wait before this client's one retry of an
+/// `inventory_lock_timeout`.
+///
+/// The PMS sends `Retry-After: 1`. The header is honoured rather than
+/// assumed, but bounded: this retry happens *inside* a guest's request,
+/// while the hold guard's lock is held, so a PMS that answered
+/// `Retry-After: 600` must not park the request until the router's own
+/// timeout kills it. Anything absent, unparseable, or out of range becomes
+/// [`INVENTORY_LOCK_RETRY_DEFAULT`].
+const INVENTORY_LOCK_RETRY_MAX: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Fallback delay when `Retry-After` is missing or unusable.
+const INVENTORY_LOCK_RETRY_DEFAULT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Read `Retry-After` as a bounded delay. Seconds only: the HTTP-date form
+/// is legal but the PMS does not send it, and a date this client failed to
+/// parse is better served by the default than by a guess.
+pub fn retry_after_delay(headers: &reqwest::header::HeaderMap) -> std::time::Duration {
+    headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(std::time::Duration::from_secs)
+        .filter(|d| *d <= INVENTORY_LOCK_RETRY_MAX)
+        .unwrap_or(INVENTORY_LOCK_RETRY_DEFAULT)
+}
+
 /// What the PMS said when it would not perform an action.
 ///
 /// Split from "the PMS could not be reached" because the two demand opposite
@@ -537,16 +710,24 @@ impl PmsChannelClient {
         //   see, so a retry is no longer blind; holding the lock past that
         //   only punishes a guest who genuinely wants a second room for the
         //   same nights.
-        // * **The PMS answered and refused** (`parse_json` maps a 4xx to
-        //   `BadRequest`: sold out, bad dates) — release. Nothing was
+        // * **The PMS answered and refused** — release. Nothing was
         //   created, and the guest may correct their input and retry now.
-        // * **Anything else** — a timeout, an unreachable host, a 5xx, a
-        //   malformed body — *keep* it to its TTL. This is the only branch
-        //   where it is genuinely unknown whether a hold now exists, and it
-        //   is precisely B8 race 2.3: the guest gives up on a hung request
-        //   and taps "book" again.
+        //   Two shapes of that: a `reason` the PMS named
+        //   ([`AppError::PmsChannel`], A19 — sold out, the desk floor, a
+        //   closed channel, an exhausted lock retry), and the pre-A19
+        //   `BadRequest` for a 4xx it did not name. Both mean the PMS spoke
+        //   and made nothing, so holding the lock past them would answer a
+        //   sold-out guest "a booking for these dates is already being
+        //   created" for the next twenty seconds.
+        // * **Anything else** — a timeout, an unreachable host, an unnamed
+        //   5xx, a malformed body — *keep* it to its TTL. This is the only
+        //   branch where it is genuinely unknown whether a hold now exists,
+        //   and it is precisely B8 race 2.3: the guest gives up on a hung
+        //   request and taps "book" again.
         match &outcome {
-            Ok(_) | Err(AppError::BadRequest(_)) => guard.release().await,
+            Ok(_) | Err(AppError::BadRequest(_)) | Err(AppError::PmsChannel { .. }) => {
+                guard.release().await
+            },
             _ => guard.keep(),
         }
 
@@ -561,41 +742,84 @@ impl PmsChannelClient {
         idempotency_key: &IdempotencyKey,
     ) -> AppResult<PmsBookingCreated> {
         let url = format!("{}/api/channel/bookings", self.base_url);
-        let response = self
-            .http
-            .post(&url)
-            .bearer_auth(&self.token)
-            .header(IDEMPOTENCY_KEY_HEADER, idempotency_key.as_str())
-            .json(request)
-            .send()
-            .await
-            .map_err(pms_unreachable)?;
+        // `inventory_lock_timeout` is the one reason this client retries by
+        // itself, and it retries **exactly once**. The PMS could not take
+        // its per-room-night lock in the time it allows itself (new-hotel
+        // #311) and says so with `Retry-After: 1`; the contended window is
+        // one other booking's write, so one wait is either enough or the
+        // lock is not the problem. A loop here would sit inside a guest's
+        // request holding the hold guard's lock, which is the shape of an
+        // outage, not a fix for one.
+        let mut retried_lock_timeout = false;
+        let (response, replayed) = loop {
+            let response = self
+                .http
+                .post(&url)
+                .bearer_auth(&self.token)
+                .header(IDEMPOTENCY_KEY_HEADER, idempotency_key.as_str())
+                .json(request)
+                .send()
+                .await
+                .map_err(pms_unreachable)?;
 
-        // Read before `parse_json` consumes the response.
-        let replayed = replay_header_says_yes(response.headers());
+            // Read before the body is consumed either way.
+            let replayed = replay_header_says_yes(response.headers());
+            let status = response.status();
+            if status.is_success() {
+                break (response, replayed);
+            }
 
-        // 422 is the PMS's answer to "this key has already been used, with
-        // a *different* body" (new-hotel #305). It is the only status on
-        // this path that is about the key rather than the stay, and it is
-        // definitive: no retry of this request can succeed, because the
-        // stored request for this key will never match this one.
-        //
-        // Intercepted here rather than left to `parse_json`, which would
-        // render it as `BadRequest("PMS rejected create booking: …")` — the
-        // PMS's raw body in front of a guest, explaining nothing and
-        // inviting exactly the retry that cannot work.
-        if response.status() == reqwest::StatusCode::UNPROCESSABLE_ENTITY {
+            // The reason is in the *body*, so reading it consumes the
+            // response — which is why the non-2xx path is handled here in
+            // full rather than handed to `parse_json`.
+            let retry_after = retry_after_delay(response.headers());
             let detail = response.text().await.unwrap_or_default();
-            tracing::error!(
-                idempotency_key = %idempotency_key,
-                detail = %truncate_refusal_body(&detail),
-                "PMS refused the create: this idempotency key was already used with a different \
-                 booking. Something re-used a key across two different stays."
-            );
-            return Err(AppError::Conflict(
-                IDEMPOTENCY_KEY_REUSED_MESSAGE.to_string(),
-            ));
-        }
+            let reason = PmsReason::from_body(&detail).or_else(|| {
+                // A PMS build older than new-hotel #311 sends no reason,
+                // and 422 on this path can only ever have been the key
+                // (new-hotel #305). Keeping the status fallback means a
+                // half-deployed estate still tells the guest the useful
+                // thing instead of the PMS's raw body.
+                (status == reqwest::StatusCode::UNPROCESSABLE_ENTITY)
+                    .then_some(PmsReason::IdempotencyKeyMismatch)
+            });
+
+            if reason == Some(PmsReason::InventoryLockTimeout) && !retried_lock_timeout {
+                retried_lock_timeout = true;
+                tracing::warn!(
+                    idempotency_key = %idempotency_key,
+                    retry_after_ms = retry_after.as_millis() as u64,
+                    "PMS could not take its inventory lock; retrying the hold create once"
+                );
+                tokio::time::sleep(retry_after).await;
+                continue;
+            }
+
+            if reason == Some(PmsReason::IdempotencyKeyMismatch) {
+                tracing::error!(
+                    idempotency_key = %idempotency_key,
+                    detail = %truncate_refusal_body(&detail),
+                    "PMS refused the create: this idempotency key was already used with a \
+                     different booking. Something re-used a key across two different stays."
+                );
+            }
+
+            return Err(match reason {
+                Some(reason) => {
+                    tracing::warn!(
+                        pms_status = status.as_u16(),
+                        reason = reason.as_str(),
+                        definitive = reason.is_definitive(),
+                        retried_lock_timeout,
+                        "PMS refused the hold create"
+                    );
+                    reason.into_app_error()
+                },
+                // No reason on the body: the pre-A19 status-shaped mapping,
+                // unchanged.
+                None => map_status_error(status, &detail, "create booking"),
+            });
+        };
 
         let mut created: PmsBookingCreated = Self::parse_json(response, "create booking").await?;
         created.replayed = replayed;
@@ -779,30 +1003,53 @@ impl PmsChannelClient {
         let status = response.status();
         if !status.is_success() {
             let detail = response.text().await.unwrap_or_default();
-            // The same split B1 drew one function over. A 4xx that is about
-            // the *request* — sold out, bad dates, a room type that no
-            // longer exists — is the guest's to fix, so it surfaces as a
-            // client error. A 401 (rotated `LOYALTY_CHANNEL_TOKEN`), a 403
-            // (`HFVILLE_WRITES_ENABLED` off) or a 404 (channel router not
-            // mounted, which is what a PMS with a dead PG pool looks like
-            // from out here) is *ours*, and telling the guest "bad request"
-            // about our own expired credential is both wrong and unhelpful.
-            return if status.is_client_error() && !NOT_THE_CALLERS_FAULT.contains(&status.as_u16())
-            {
-                Err(AppError::BadRequest(format!(
-                    "PMS rejected {what}: {}",
-                    truncate_refusal_body(&detail)
-                )))
-            } else {
-                Err(AppError::ExternalServiceUnavailable(format!(
-                    "PMS {what} failed: {status} {}",
-                    truncate_refusal_body(&detail)
-                )))
-            };
+            // A19: the PMS's own `reason` wins when it sent one. It is
+            // strictly better information than the status — `sold_out` and
+            // `last_room_held_for_desk` are the same 409 — and it is what
+            // the guest's copy is keyed on. Availability goes through here
+            // too, so a closed channel says "closed" on the first screen of
+            // the flow rather than only on the create.
+            if let Some(reason) = PmsReason::from_body(&detail) {
+                tracing::warn!(
+                    pms_status = status.as_u16(),
+                    reason = reason.as_str(),
+                    what = %what,
+                    "PMS refused with a machine reason"
+                );
+                return Err(reason.into_app_error());
+            }
+            return Err(map_status_error(status, &detail, what));
         }
         response.json::<T>().await.map_err(|e| {
             AppError::ExternalServiceUnavailable(format!("PMS {what} response malformed: {e}"))
         })
+    }
+}
+
+/// The pre-A19 mapping: infer intent from the status alone.
+///
+/// Still the fallback for a PMS that sent no `reason` — an older build, a
+/// Cloudflare Access challenge, an nginx error page, anything between us
+/// and the channel that answered instead of it.
+///
+/// The split B1 drew: a 4xx that is about the *request* — bad dates, a room
+/// type that no longer exists — is the guest's to fix, so it surfaces as a
+/// client error. A 401 (rotated `LOYALTY_CHANNEL_TOKEN`), a 403
+/// (`HFVILLE_WRITES_ENABLED` off) or a 404 (channel router not mounted,
+/// which is what a PMS with a dead PG pool looks like from out here) is
+/// *ours*, and telling the guest "bad request" about our own expired
+/// credential is both wrong and unhelpful.
+fn map_status_error(status: reqwest::StatusCode, detail: &str, what: &str) -> AppError {
+    if status.is_client_error() && !NOT_THE_CALLERS_FAULT.contains(&status.as_u16()) {
+        AppError::BadRequest(format!(
+            "PMS rejected {what}: {}",
+            truncate_refusal_body(detail)
+        ))
+    } else {
+        AppError::ExternalServiceUnavailable(format!(
+            "PMS {what} failed: {status} {}",
+            truncate_refusal_body(detail)
+        ))
     }
 }
 

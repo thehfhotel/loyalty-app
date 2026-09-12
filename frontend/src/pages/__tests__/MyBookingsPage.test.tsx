@@ -168,6 +168,13 @@ vi.mock('react-i18next', () => ({
       };
       return translations[key] ?? key;
     },
+    // B16's `DeskContactFooter` renders Thai-first through `getFixedT`. The
+    // shipped Thai and English copy is asserted against the real bundles in
+    // that component's own test; here the language-tagged key is enough to
+    // prove the page renders the footer at all.
+    i18n: {
+      getFixedT: (lng: string) => (key: string) => `${lng}:${key}`,
+    },
   }),
 }));
 
@@ -996,6 +1003,23 @@ describe('MyBookingsPage', () => {
       // role the badge is silent, which is what this asserts against.
       const badge = within(modal).getByLabelText('Being checked');
       expect(badge).toHaveAttribute('role', 'img');
+    });
+  });
+});
+
+/**
+ * B16 — the booking-status screen is where a guest lands when a stay has
+ * already gone wrong, so it carries the same call-the-desk line as the rest
+ * of the LIFF flow.
+ */
+describe('MyBookingsPage — desk contact footer (B16)', () => {
+  it('always renders the call-the-desk footer', async () => {
+    mockGetMyBookings.mockResolvedValue([]);
+
+    render(<MyBookingsPage />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('desk-contact-footer')).toBeInTheDocument();
     });
   });
 });

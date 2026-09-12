@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import QRCode from 'qrcode';
-import { FiCheckCircle, FiClock, FiDownload, FiPhone, FiUpload } from 'react-icons/fi';
+import { FiCheckCircle, FiClock, FiDownload, FiUpload } from 'react-icons/fi';
 import axios from 'axios';
 import { Badge, Button, Card } from '../components/ui';
 import {
@@ -15,7 +15,7 @@ import {
 } from '../services/depositLinkService';
 import { depositPollIntervalMs } from '../utils/depositPolling';
 import { readDepositToken } from '../utils/depositToken';
-import { deskPhone, deskPhoneHref } from '../utils/deskContact';
+import DeskContactFooter from '../components/booking/DeskContactFooter';
 import { guestSlipOkStatusKey } from '../types/slipok';
 import { formatDateToDDMMYYYY, formatDateTimeToEuropean } from '../utils/dateFormatter';
 import { logger } from '../utils/logger';
@@ -274,33 +274,11 @@ export default function DepositLinkPage() {
     (axios.isAxiosError(depositQuery.error) && depositQuery.error.response?.status === 404);
 
   const property: Property | null = deposit?.property ?? null;
-  const phone = deskPhone(property);
 
-  const deskLine = phone ? (
-    <a
-      href={deskPhoneHref(phone)}
-      className="inline-flex items-center gap-2 text-body text-brand-700 hover:underline"
-      data-testid="desk-phone"
-    >
-      <FiPhone className="h-4 w-4" aria-hidden="true" />
-      {th('depositLink.desk.withPhone', { phone })}
-    </a>
-  ) : (
-    <p className="text-body text-ink-muted" data-testid="desk-phone">
-      {th('depositLink.desk.withoutPhone')}
-    </p>
-  );
-
-  const deskBlock = (
-    <div className="space-y-1">
-      {deskLine}
-      <p className="text-caption text-ink-muted">
-        {phone
-          ? en('depositLink.desk.withPhone', { phone })
-          : en('depositLink.desk.withoutPhone')}
-      </p>
-    </div>
-  );
+  // B16: one desk line for the whole LIFF flow. This page used to carry its
+  // own copy of it, which is how the deposit screen and the booking screen
+  // came to promise different things about when reception answers.
+  const deskBlock = <DeskContactFooter property={property} />;
 
   if (token && depositQuery.isPending && !depositQuery.isError) {
     return (
@@ -555,6 +533,8 @@ export default function DepositLinkPage() {
         <Link to="/privacy" className="text-caption text-brand-700 hover:underline">
           {th('depositLink.privacyLink')}
         </Link>
+        {/* B16: persistent, not conditional — a guest who cannot work this
+            page has hit no error at all, and still needs the number. */}
         {!isDead && deskBlock}
       </Card>
     </Shell>

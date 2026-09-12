@@ -153,6 +153,7 @@ impl IntoResponse for RateLimitError {
                         retry_after
                     ),
                     details: None,
+                    reason: None,
                 });
 
                 (
@@ -168,6 +169,7 @@ impl IntoResponse for RateLimitError {
                     message: "Service temporarily unavailable. Please try again in a moment."
                         .to_string(),
                     details: None,
+                    reason: None,
                 });
 
                 (StatusCode::SERVICE_UNAVAILABLE, body).into_response()

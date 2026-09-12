@@ -214,6 +214,7 @@ impl IntoResponse for AdminAuthError {
             error: error.to_string(),
             message: message.to_string(),
             details: None,
+            reason: None,
         });
 
         (status, body).into_response()

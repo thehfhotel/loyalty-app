@@ -17,7 +17,9 @@ import {
 import { useAuthStore } from '../store/authStore';
 import { logger } from '../utils/logger';
 import { isPmsOutage } from '../utils/pmsOutage';
-import PmsOutageNotice from '../components/booking/PmsOutageNotice';
+import { pmsReasonOf, reasonWantsPanel, type PmsReason } from '../utils/pmsReason';
+import BookingErrorNotice from '../components/booking/BookingErrorNotice';
+import DeskContactFooter from '../components/booking/DeskContactFooter';
 import toast from 'react-hot-toast';
 
 // The booking flow is a CHANNEL into the PMS (ADR-0003): availability is
@@ -67,10 +69,17 @@ export default function BookingPage() {
   const [guestPhone, setGuestPhone] = useState(user?.phone ?? '');
   const [paymentOption, setPaymentOption] = useState<PaymentOption>('deposit50');
   const [currentStep, setCurrentStep] = useState(1);
-  // The booking system could not be reached on the last attempt (A17).
-  // Sticky, not a toast: a guest who has to phone reception needs the
-  // number to still be on screen while they find their phone.
-  const [pmsOutage, setPmsOutage] = useState(false);
+  // The last create attempt did not produce a hold (A17, widened by A19).
+  //
+  // Sticky, not a toast: a guest who has to phone reception needs the number
+  // to still be on screen while they find their phone, and a guest whose
+  // dates are sold out needs the button back to step 1 to stay put.
+  //
+  // `null` means the last attempt did not fail. A *failure with no reason*
+  // is `{ reason: null }`, which is why this is an object and not just the
+  // reason — the two are different states and collapsing them would lose
+  // the outage case the PMS could not put a name to.
+  const [bookingFailure, setBookingFailure] = useState<{ reason: PmsReason | null } | null>(null);
 
   // Payment state
   const [createdBooking, setCreatedBooking] = useState<ChannelBookingResponse | null>(null);
@@ -128,20 +137,29 @@ export default function BookingPage() {
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ['bookings'] });
       toast.success(t('booking.bookingSuccess'));
-      setPmsOutage(false);
+      setBookingFailure(null);
       setCreatedBooking(data);
       setCurrentStep(4);
     },
     onError: (error: Error) => {
-      // The hold create fails closed, so "the PMS could not answer" is a
-      // distinct outcome from "the PMS said no" — and it is the one where
-      // the guest can still get a room, by phoning the desk. It gets the
-      // panel below rather than a toast carrying the backend's words.
-      if (isPmsOutage(error)) {
-        setPmsOutage(true);
+      // Two things get the sticky panel rather than a toast carrying the
+      // backend's words:
+      //
+      // * **the PMS named a reason** (A19) — `sold_out` needs a button, not
+      //   a toast that scrolls away, and `last_room_held_for_desk` needs a
+      //   number the guest can still tap thirty seconds later;
+      // * **the PMS could not answer at all** (A17) — same argument, no
+      //   reason to name.
+      //
+      // Everything else — a validation error, a duplicate in flight — is
+      // still a toast: the guest's next step is on the form in front of
+      // them.
+      const reason = pmsReasonOf(error);
+      if (reasonWantsPanel(reason) || isPmsOutage(error)) {
+        setBookingFailure({ reason });
         return;
       }
-      setPmsOutage(false);
+      setBookingFailure(null);
       toast.error(error.message || t('booking.bookingError'));
     },
   });
@@ -705,7 +723,21 @@ export default function BookingPage() {
             </Card>
           </div>
 
-          {pmsOutage && <PmsOutageNotice property={property} />}
+          {bookingFailure && (
+            <BookingErrorNotice
+              property={property}
+              reason={bookingFailure.reason}
+              onPickOtherDates={() => {
+                // Back to step 1 with the room choice dropped: the dates are
+                // what the guest has to change, and keeping a selection made
+                // against the old ones is how you get them to press "book"
+                // on the same sold-out room again.
+                setBookingFailure(null);
+                setSelectedRoomTypeId(null);
+                setCurrentStep(1);
+              }}
+            />
+          )}
 
           <div className={STICKY_CTA_CLASSES}>
             <span className="text-body font-semibold text-ink">฿{totalPrice.toLocaleString()}</span>
@@ -937,6 +969,9 @@ export default function BookingPage() {
           </div>
         </div>
       )}
+      {/* B16 — the way out, on every step of the flow. `pb-28` clears the
+          sticky action bar on the steps that have one. */}
+      <DeskContactFooter property={property} className="mx-auto mt-8 max-w-2xl pb-28" />
     </AppShell>
   );
 }

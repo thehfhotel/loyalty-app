@@ -1231,7 +1231,19 @@
       "heading": "预订系统暂时无法使用",
       "withPhone": "预订系统暂时无法使用，请致电前台 {{phone}}。",
       "withoutPhone": "预订系统暂时无法使用，请联系前台。",
-      "notCharged": "系统未创建预订，也未向您收取任何费用。"
+      "notCharged": "系统未创建预订，也未向您收取任何费用。",
+      "closedWithPhone": "目前暂停在线预订，请致电前台 {{phone}}。",
+      "closedWithoutPhone": "目前暂停在线预订，请联系前台。"
+    },
+    "refusal": {
+      "soldOut": {
+        "body": "所选日期该房型已订满。",
+        "action": "选择其他日期"
+      },
+      "deskHeld": {
+        "withPhone": "这些日期的最后一间房保留给直接向酒店预订，请致电 {{phone}}。",
+        "withoutPhone": "这些日期的最后一间房保留给直接向酒店预订，请联系前台。"
+      }
     }
   },
   "payment": {
@@ -1265,5 +1277,12 @@
     "bookings": "预订",
     "transactions": "交易",
     "email": "邮件"
+  },
+  "desk": {
+    "footer": {
+      "withPhone": "联系前台，电话 {{phone}}（24 小时）",
+      "withoutPhone": "请联系您预订酒店的前台（24 小时）。",
+      "anyProperty": "联系前台（24 小时）"
+    }
   }
 }

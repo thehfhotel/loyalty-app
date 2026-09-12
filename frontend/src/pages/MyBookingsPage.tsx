@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { FiCalendar, FiUsers, FiStar, FiAlertCircle, FiPlus, FiChevronRight, FiX, FiUpload, FiCheckCircle, FiClock, FiDollarSign, FiDownload } from 'react-icons/fi';
 import AppShell from '../components/layout/AppShell';
+import DeskContactFooter from '../components/booking/DeskContactFooter';
 import {
   Button,
   buttonVariants,
@@ -1046,6 +1047,12 @@ export default function MyBookingsPage() {
           </div>
         )}
       </Modal>
+
+      {/* B16 — the booking-status screen is where a guest lands when
+          something has already gone wrong with a stay, and until the guest
+          booking list carries `property` (it does not today) the desks are
+          listed rather than guessed. */}
+      <DeskContactFooter property={null} className="mt-8" />
     </AppShell>
   );
 }
