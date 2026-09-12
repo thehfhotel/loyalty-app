@@ -98,6 +98,11 @@ async fn create_booking_with_slip(
     .expect("booking insert failed");
 
     let slip_id = Uuid::new_v4();
+    // `uq_booking_slips_slip_url_live` makes the path unique among live
+    // rows, so the fixture derives it from the slip id. The
+    // `f3-secret-payer-image` marker survives, because that string is what
+    // the leak assertions grep the serialised export for.
+    let slip_url = format!("/storage/slips/f3-secret-payer-image-{slip_id}.jpg");
     sqlx::query(
         "INSERT INTO booking_slips (id, booking_id, slip_url, uploaded_by, slipok_status, \
          slipok_trans_ref, admin_status, is_primary) \
@@ -105,7 +110,7 @@ async fn create_booking_with_slip(
     )
     .bind(slip_id)
     .bind(booking_id)
-    .bind("/storage/slips/f3-secret-payer-image.jpg")
+    .bind(&slip_url)
     .bind(user_id)
     .bind(trans_ref)
     .execute(pool)
