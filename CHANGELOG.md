@@ -11,6 +11,26 @@ merging that PR is what tags `vX.Y.Z` and publishes the GitHub release.
 Entries below the generated sections are the earlier hand-written, dated
 format, kept verbatim for history.
 
+## [4.7.0](https://github.com/thehfhotel/loyalty-app/compare/v4.6.0...v4.7.0) (2026-09-12)
+
+
+### Features
+
+* **admin:** add LINE follower counts to GET /api/admin/stats (D2b) ([#447](https://github.com/thehfhotel/loyalty-app/issues/447)) ([d0d96a7](https://github.com/thehfhotel/loyalty-app/commit/d0d96a76fd457e113eb6f35164a75794cd5ec0aa))
+* **admin:** show what the SlipOK machine check concluded, per slip (A6) ([#443](https://github.com/thehfhotel/loyalty-app/issues/443)) ([b022fb3](https://github.com/thehfhotel/loyalty-app/commit/b022fb325e20b675a386768f5d9ab3410aea4c7c))
+* **analytics:** deposit-link funnel counters on a new admin analytics page ([#441](https://github.com/thehfhotel/loyalty-app/issues/441)) ([cfdc212](https://github.com/thehfhotel/loyalty-app/commit/cfdc2128ae899be4cb638f73c794c5b605ac8430))
+* **analytics:** three friction proxies on the deposit funnel and a friction card (D15) ([#444](https://github.com/thehfhotel/loyalty-app/issues/444)) ([0f40055](https://github.com/thehfhotel/loyalty-app/commit/0f40055cfce0a3f06489d58b02cf294fc87bb989))
+* **channel:** typed PMS reason codes, per-reason guest copy, desk fallback (A19 + B16) ([#438](https://github.com/thehfhotel/loyalty-app/issues/438)) ([812acfd](https://github.com/thehfhotel/loyalty-app/commit/812acfdf5344286826557d597f7aac9a98fd59d2))
+* degrade to manual on a SlipOK outage (A4) + shadow-window agreement report (A9) ([#439](https://github.com/thehfhotel/loyalty-app/issues/439)) ([d45482d](https://github.com/thehfhotel/loyalty-app/commit/d45482d62bfcdfeafa5f8647d4c534e194f3f56f))
+* **line:** meter every OA push against the LINE free-plan budget (C5) ([#437](https://github.com/thehfhotel/loyalty-app/issues/437)) ([248f838](https://github.com/thehfhotel/loyalty-app/commit/248f838ed49070c0b3792e03decb7da82111a863))
+* **pms:** make the loyalty -&gt; PMS channel switchable (B4b) ([#442](https://github.com/thehfhotel/loyalty-app/issues/442)) ([e517cbd](https://github.com/thehfhotel/loyalty-app/commit/e517cbda674967399e5d5953b2d43da594359855))
+* **privacy:** guest rights path and the published PDPA notice (F3) ([#445](https://github.com/thehfhotel/loyalty-app/issues/445)) ([e3f7ec8](https://github.com/thehfhotel/loyalty-app/commit/e3f7ec8e5e8998ec5211c1be978918b282e11cb4))
+
+
+### Bug Fixes
+
+* **i18n:** Thai copy pass on the guest booking path (C12) ([#448](https://github.com/thehfhotel/loyalty-app/issues/448)) ([77510d8](https://github.com/thehfhotel/loyalty-app/commit/77510d8a16c1c26d899c4aa5a8655abf4fd80862))
+
 ## [4.6.0](https://github.com/thehfhotel/loyalty-app/compare/v4.5.3...v4.6.0) (2026-09-11)
 
 

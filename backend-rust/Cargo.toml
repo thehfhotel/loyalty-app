@@ -1,6 +1,6 @@
 [package]
 name = "loyalty-backend"
-version = "4.6.0"
+version = "4.7.0"
 edition = "2021"
 authors = ["Loyalty App Team"]
 description = "Rust backend for the Loyalty App"
