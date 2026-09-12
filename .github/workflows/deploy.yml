@@ -276,6 +276,15 @@ jobs:
           SLIPOK_MONTHLY_QUOTA:               ${{ vars.SLIPOK_MONTHLY_QUOTA }}
           SLIPOK_DEGRADE_FAILURE_THRESHOLD:   ${{ vars.SLIPOK_DEGRADE_FAILURE_THRESHOLD }}
           SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS: ${{ vars.SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS }}
+          # PMS booking channel (B4b, ADR-0003). The base URL is a
+          # repository VARIABLE: it is not a secret, it is the one value the
+          # owner needs to read back in the UI to see whether the channel is
+          # pointed anywhere, and blanking it is the rollback. The two tokens
+          # are SECRETS — they are bearer credentials, one per direction.
+          # Unset on any of the three = that direction stays dark.
+          PMS_BASE_URL:          ${{ vars.PMS_BASE_URL }}
+          PMS_CHANNEL_TOKEN:     ${{ secrets.PMS_CHANNEL_TOKEN }}
+          LOYALTY_SERVICE_TOKEN: ${{ secrets.LOYALTY_SERVICE_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -304,10 +313,12 @@ jobs:
           # step dies with a shell syntax error, 2026-09-10 09:56Z). Optional keys
           # (SLIPOK_*, PROMPTPAY_*_ID, BOOKING_NOTIFY_EMAIL_*, SLIP_RETENTION_DAYS,
           # AUDIT_LOG_RETENTION_DAYS, SLIP_ACCESS_LOG_RETENTION_DAYS,
-          # LINE_PUSH_BUDGET_*)
+          # LINE_PUSH_BUDGET_*, PMS_BASE_URL, PMS_CHANNEL_TOKEN,
+          # LOYALTY_SERVICE_TOKEN)
           # are merged only when non-empty: the backend reads an empty value as
           # set, which would mint a QR with no receiving id, call SlipOK with no
-          # key, mail nobody, or run a retention sweep on a window nobody chose.
+          # key, mail nobody, run a retention sweep on a window nobody chose, or
+          # hand an unparseable base URL to a validator that refuses to boot.
           jq -n \
             --arg commit_sha           "$COMMIT_SHA" \
             --arg deploy_payload_b64   "$(base64 -w0 < /tmp/deploy.tar.gz)" \
@@ -354,6 +365,9 @@ jobs:
             --arg SLIPOK_MONTHLY_QUOTA               "${SLIPOK_MONTHLY_QUOTA:-}" \
             --arg SLIPOK_DEGRADE_FAILURE_THRESHOLD   "${SLIPOK_DEGRADE_FAILURE_THRESHOLD:-}" \
             --arg SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS "${SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS:-}" \
+            --arg PMS_BASE_URL          "${PMS_BASE_URL:-}" \
+            --arg PMS_CHANNEL_TOKEN     "${PMS_CHANNEL_TOKEN:-}" \
+            --arg LOYALTY_SERVICE_TOKEN "${LOYALTY_SERVICE_TOKEN:-}" \
             '{
               commit_sha: $commit_sha,
               deploy_payload_b64: $deploy_payload_b64,
@@ -404,7 +418,10 @@ jobs:
                          LINE_PUSH_BUDGET_TOTAL: $LINE_PUSH_BUDGET_TOTAL,
                          SLIPOK_MONTHLY_QUOTA: $SLIPOK_MONTHLY_QUOTA,
                          SLIPOK_DEGRADE_FAILURE_THRESHOLD: $SLIPOK_DEGRADE_FAILURE_THRESHOLD,
-                         SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS: $SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS }
+                         SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS: $SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS,
+                         PMS_BASE_URL: $PMS_BASE_URL,
+                         PMS_CHANNEL_TOKEN: $PMS_CHANNEL_TOKEN,
+                         LOYALTY_SERVICE_TOKEN: $LOYALTY_SERVICE_TOKEN }
                        | with_entries(select(.value != "")))' \
           | ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \

@@ -1496,17 +1496,26 @@ impl Settings {
                 "line_push_budget.total",
                 env_present("LINE_PUSH_BUDGET_TOTAL"),
             )?
-            .set_override_option("pms.base_url", env::var("PMS_BASE_URL").ok())?
-            .set_override_option("pms.channel_token", env::var("PMS_CHANNEL_TOKEN").ok())?
-            // Blank-means-absent (`env_present`), not `env::var`: every
-            // compose file passes optional settings as `VAR: ${VAR:-}`, so
-            // an unset flag arrives as `Some("")` — which the config layer
-            // cannot coerce to a bool, and which would fail the whole load.
+            // Blank-means-absent (`env_present`), not `env::var`. Both of
+            // these are now passed by compose as `${VAR:-}` (B4b), so on a
+            // stack where the owner has not set them they arrive as
+            // `Some("")` — and `Some("")` is the worst of both worlds here:
+            // `PmsConfig::is_configured` would report the channel on, and
+            // `Settings::validate` would hand `""` to
+            // `validate_pms_base_url`, which rejects it and refuses to boot
+            // the ENTIRE backend over a feature nobody switched on. Blank
+            // means unset means the channel stays dark.
+            .set_override_option("pms.base_url", env_present("PMS_BASE_URL"))?
+            .set_override_option("pms.channel_token", env_present("PMS_CHANNEL_TOKEN"))?
+            // Same reason, plus: an unset flag arrives as `Some("")`, which
+            // the config layer cannot coerce to a bool and which would fail
+            // the whole load.
             .set_override_option("pms.hold_guard", env_present("PMS_HOLD_GUARD"))?
-            .set_override_option(
-                "loyalty_service.token",
-                env::var("LOYALTY_SERVICE_TOKEN").ok(),
-            )?
+            // Same again for the inbound direction (PMS -> POST
+            // /api/loyalty/stays). A blank expected token must read as "not
+            // configured", so the endpoint answers with a configuration
+            // error rather than comparing every caller against `""`.
+            .set_override_option("loyalty_service.token", env_present("LOYALTY_SERVICE_TOKEN"))?
             .set_override_option(
                 "admin_bootstrap.emails",
                 env::var("ADMIN_BOOTSTRAP_EMAILS").ok(),
@@ -2072,6 +2081,56 @@ mod tests {
             PmsConfig::default().hold_guard,
             "a PmsConfig built in code, not from the environment, still \
              carries the guard: a derived Default would have said false"
+        );
+    }
+
+    /// The channel must stay **dark** on a stack whose owner has set
+    /// nothing — and "nothing" reaches this process as an empty string.
+    ///
+    /// `docker-compose.prod.yml` passes `PMS_BASE_URL: ${PMS_BASE_URL:-}`,
+    /// so an unset repository variable arrives as `Some("")`, not `None`.
+    /// Read with `env::var(..).ok()` that blank would be a *configured*
+    /// base URL: `PmsConfig::is_configured` would say the channel is on,
+    /// and `Settings::validate` would hand `""` to
+    /// `validate_pms_base_url`, which rejects it as unparseable — so the
+    /// whole backend would refuse to boot because of a feature nobody
+    /// switched on. `env_present` is what keeps blank meaning unset.
+    #[test]
+    fn a_blank_pms_base_url_leaves_the_channel_dark_and_still_boots() {
+        env::set_var("PMS_BASE_URL", "");
+        env::set_var("PMS_CHANNEL_TOKEN", "   ");
+        let base_url = env_present("PMS_BASE_URL");
+        let channel_token = env_present("PMS_CHANNEL_TOKEN");
+        env::remove_var("PMS_BASE_URL");
+        env::remove_var("PMS_CHANNEL_TOKEN");
+
+        assert_eq!(base_url, None, "a blank PMS_BASE_URL is unset");
+        assert_eq!(
+            channel_token, None,
+            "and a whitespace-only PMS_CHANNEL_TOKEN is unset too"
+        );
+
+        let mut settings = production_settings_with_strong_secrets();
+        settings.pms.base_url = base_url;
+        settings.pms.channel_token = channel_token;
+        assert!(
+            !settings.pms.is_configured(),
+            "blank on both sides must read as a dark channel"
+        );
+        settings
+            .validate()
+            .expect("an unconfigured PMS channel must not stop the backend booting");
+
+        // And the hazard this guards against is real, not theoretical: the
+        // same blank taken literally fails the boot-time validator.
+        let mut misread = production_settings_with_strong_secrets();
+        misread.pms.base_url = Some(String::new());
+        let err = misread
+            .validate()
+            .expect_err("a literal empty PMS_BASE_URL must be refused, not silently used");
+        assert!(
+            err.to_string().contains("PMS_BASE_URL"),
+            "the error must name the variable, got: {err}"
         );
     }
 

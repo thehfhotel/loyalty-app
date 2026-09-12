@@ -132,6 +132,25 @@ services:
       LINE_PUSH_BUDGET_CAMPAIGN: ${LINE_PUSH_BUDGET_CAMPAIGN:-}
       LINE_PUSH_BUDGET_RESERVE: ${LINE_PUSH_BUDGET_RESERVE:-}
       LINE_PUSH_BUDGET_TOTAL: ${LINE_PUSH_BUDGET_TOTAL:-}
+      # PMS booking channel (B4b, ADR-0003). BOTH must be set or the
+      # channel stays DARK and every availability lookup and hold falls
+      # back to the front desk — that is the deliberate default, so the
+      # owner can switch the channel on without a code change.
+      # Blank = unset (config::env_present), and that matters more here
+      # than anywhere else in this list: `Settings::validate` parses
+      # PMS_BASE_URL at boot and REFUSES TO START on a value it cannot
+      # trust, so a `${VAR:-}` read literally would take the whole backend
+      # down over a feature nobody turned on.
+      # PMS_BASE_URL is the PMS origin only, no path and no trailing
+      # component the client would drop (see docs/ops/pms-channel-wiring.md);
+      # the client joins `api/channel/...` onto it.
+      PMS_BASE_URL: ${PMS_BASE_URL:-}
+      PMS_CHANNEL_TOKEN: ${PMS_CHANNEL_TOKEN:-}
+      # Inbound half of the same channel: the PMS posts completed stays to
+      # POST /api/loyalty/stays with this shared secret. A DIFFERENT token
+      # from PMS_CHANNEL_TOKEN above — one per direction. Blank = unset, so
+      # stay accrual is refused rather than compared against an empty string.
+      LOYALTY_SERVICE_TOKEN: ${LOYALTY_SERVICE_TOKEN:-}
       # Rust-specific logging
       RUST_LOG: ${RUST_LOG:-info}
     # VOLUMES: Source mounts (./backend-rust:/app) are in docker-compose.dev.yml ONLY

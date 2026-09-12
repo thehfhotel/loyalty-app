@@ -41,6 +41,7 @@ use loyalty_backend::{
     redis::RedisManager,
     routes,
     services::email::is_valid_mailbox,
+    services::pms_channel::validate_pms_base_url,
     state::AppState,
 };
 
@@ -607,6 +608,58 @@ fn log_startup_info(config: &Settings) {
                 api_url
             );
         }
+    }
+
+    // PMS booking channel (B4b). The whole channel is dark until BOTH
+    // `PMS_BASE_URL` and `PMS_CHANNEL_TOKEN` are set, and until this line
+    // existed there was no way to read that state off a running container
+    // short of exec'ing in — "verified live" for the switch-on is this line.
+    //
+    // The HOST is logged, never the URL's path and never one character of
+    // the token: the boot log is the least-guarded place this process
+    // writes to, and the token is a bearer credential.
+    match (
+        config.pms.base_url.as_deref(),
+        config.pms.channel_token.is_some(),
+    ) {
+        (Some(base_url), true) => {
+            // The same parser `Settings::validate` already ran on this
+            // value, so this cannot be the first thing to reject it.
+            let host = validate_pms_base_url(base_url)
+                .ok()
+                .and_then(|u| {
+                    u.host_str().map(|h| match u.port() {
+                        Some(port) => format!("{h}:{port}"),
+                        None => h.to_string(),
+                    })
+                })
+                .unwrap_or_else(|| "unparseable".to_string());
+            info!("  PMS Channel: Configured — base host {host}, token set");
+        },
+        (Some(_), false) => warn!(
+            "  PMS Channel: HALF configured — PMS_BASE_URL is set but \
+             PMS_CHANNEL_TOKEN is not. Every booking falls back to the desk."
+        ),
+        (None, true) => warn!(
+            "  PMS Channel: HALF configured — PMS_CHANNEL_TOKEN is set but \
+             PMS_BASE_URL is not. Every booking falls back to the desk."
+        ),
+        (None, false) => info!(
+            "  PMS Channel: Not configured (PMS_BASE_URL / PMS_CHANNEL_TOKEN \
+             unset) — availability and holds go to the desk"
+        ),
+    }
+
+    // Inbound half of the same channel: the PMS posts completed stays to
+    // POST /api/loyalty/stays with this shared secret. Unset means every
+    // such call is refused, so nights and points never accrue.
+    if config.loyalty_service.token.is_some() {
+        info!("  PMS stay accrual: Enabled (LOYALTY_SERVICE_TOKEN set)");
+    } else {
+        info!(
+            "  PMS stay accrual: Not configured (LOYALTY_SERVICE_TOKEN unset) \
+             — checkout stays from the PMS are refused"
+        );
     }
 
     info!("============================");
