@@ -146,12 +146,22 @@ pub enum PmsBaseUrlError {
 pub fn validate_pms_base_url(raw: &str) -> Result<Url, PmsBaseUrlError> {
     let mut url = Url::parse(raw.trim()).map_err(|_| PmsBaseUrlError::Unparseable)?;
 
-    let host = url.host_str().ok_or(PmsBaseUrlError::NoHost)?.to_string();
+    // Scheme first, host second, so the error names the actual problem: a
+    // `file:///etc/passwd` has no host *and* the wrong scheme, and being
+    // told "PMS_BASE_URL has no host" about it sends an operator looking
+    // for a typo in a value whose whole shape is wrong.
     match url.scheme() {
         "https" => {},
-        "http" if host_is_local(&host) => {},
-        "http" => return Err(PmsBaseUrlError::InsecureScheme),
+        "http" => {
+            let host = url.host_str().ok_or(PmsBaseUrlError::NoHost)?;
+            if !host_is_local(host) {
+                return Err(PmsBaseUrlError::InsecureScheme);
+            }
+        },
         _ => return Err(PmsBaseUrlError::UnsupportedScheme),
+    }
+    if url.host_str().is_none() {
+        return Err(PmsBaseUrlError::NoHost);
     }
     if !url.username().is_empty() || url.password().is_some() {
         return Err(PmsBaseUrlError::HasCredentials);
@@ -1855,9 +1865,16 @@ mod tests {
                 "https://pms.example.com/#frag",
                 PmsBaseUrlError::HasQueryOrFragment,
             ),
-            // Not a PMS.
+            // Not a PMS. The scheme is checked before the host so the
+            // message names the real problem: `file:///etc/passwd` has no
+            // host *either*, and "PMS_BASE_URL has no host" would send an
+            // operator hunting for a typo in a value whose whole shape is
+            // wrong.
             ("file:///etc/passwd", PmsBaseUrlError::UnsupportedScheme),
             ("ftp://pms.example.com", PmsBaseUrlError::UnsupportedScheme),
+            ("data:text/plain,hello", PmsBaseUrlError::UnsupportedScheme),
+            // Right scheme, nothing to send to.
+            ("https://", PmsBaseUrlError::Unparseable),
             // Not a URL at all — the shape of an unset variable that
             // someone filled in with a hostname.
             ("pms.example.com", PmsBaseUrlError::Unparseable),
