@@ -1482,6 +1482,10 @@ pub fn router() -> Router<AppState> {
         // viewer sidebar. Conceptually unrelated to room inventory, so
         // it lives in its own module.
         .merge(crate::routes::admin_slips::router())
+        // A9: the shadow-window agreement report. Read-only and its own
+        // module because it is calibration arithmetic, not slip moderation —
+        // it will be deleted the day `SLIPOK_AUTO_VERIFY` is decided.
+        .merge(crate::routes::admin_slip_report::router())
         // Deposit request links (B1): issue / list / revoke / reissue the
         // link reception sends a guest who booked by phone or at the desk.
         .merge(crate::routes::admin_deposit_links::router())

@@ -31,9 +31,11 @@ use reqwest::Client;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::env;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::error::AppError;
+use crate::services::slipok_health::{CheckOutcome, SlipokHealthRecorder};
 use crate::utils::logging::sanitize_log_value;
 
 /// Default SlipOK API base URL
@@ -387,6 +389,17 @@ pub struct SlipOKService {
     client: Client,
     /// Service configuration (None if not configured)
     config: Option<SlipOKConfig>,
+    /// Degradation tracker (task A4), or `None` in the constructors that
+    /// have no database behind them — `from_env`, `new`, and every unit
+    /// test. Attached by `AppState::new`, so **every** call this client
+    /// makes is observed without either slip-upload route handler having to
+    /// remember to report one.
+    ///
+    /// Deliberately here rather than at the call sites: the booking upload
+    /// path and the deposit-link path both run the same check, and a tracker
+    /// wired per call site is a tracker that goes stale the moment a third
+    /// path appears.
+    health: Option<Arc<SlipokHealthRecorder>>,
 }
 
 /// Simplified SlipOK service alias with direct credential constructor
@@ -413,7 +426,11 @@ impl SlipOKService {
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { client, config }
+        Self {
+            client,
+            config,
+            health: None,
+        }
     }
 
     /// Create a new SlipOK service instance with API key and branch ID
@@ -436,6 +453,7 @@ impl SlipOKService {
                     .build()
                     .expect("Failed to create HTTP client"),
                 config: None,
+                health: None,
             };
         }
 
@@ -454,6 +472,7 @@ impl SlipOKService {
         Self {
             client,
             config: Some(config),
+            health: None,
         }
     }
 
@@ -467,7 +486,19 @@ impl SlipOKService {
         Self {
             client,
             config: Some(config),
+            health: None,
         }
+    }
+
+    /// Attach the A4 degradation tracker.
+    ///
+    /// `AppState::new` is the only caller: it is the one place that holds
+    /// both the pool and the settings the tracker needs. Every other
+    /// constructor leaves it unset, which makes the tracker invisible to the
+    /// unit tests and to any process with no database.
+    pub fn with_health(mut self, health: SlipokHealthRecorder) -> Self {
+        self.health = Some(Arc::new(health));
+        self
     }
 
     /// Build the service from application settings, or `None` when either
@@ -696,10 +727,42 @@ impl SlipOKService {
         self.execute_request(request).await
     }
 
+    /// Send a prepared request, turn the response into a
+    /// `SlipVerificationResult`, and report to the A4 degradation tracker
+    /// what the call said about *the vendor*.
+    ///
+    /// The only funnel both request shapes pass through, and the only one
+    /// they pass through **after** the not-configured early return — so the
+    /// tracker sees exactly the calls that reached the vendor, and a stack
+    /// with no credentials never looks like an outage.
+    async fn execute_request(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<SlipVerificationResult, AppError> {
+        let outcome = self.send_request(request).await;
+        self.observe(&outcome);
+        outcome
+    }
+
+    /// Hand the call's outcome to the tracker, if one is attached.
+    ///
+    /// Fire-and-forget by construction (`SlipokHealthRecorder::record`
+    /// spawns): this runs inline on the guest's upload request, and an
+    /// alerting path that could add SMTP latency — or an error — to a slip
+    /// upload would be worse than no alerting at all.
+    fn observe(&self, outcome: &Result<SlipVerificationResult, AppError>) {
+        let Some(health) = self.health.as_ref() else {
+            return;
+        };
+        if let Some(classified) = CheckOutcome::classify(outcome) {
+            health.record(classified);
+        }
+    }
+
     /// Send a prepared request and turn the response into a
     /// `SlipVerificationResult`. Shared by the JSON (`url`) and multipart
     /// (`files`) request shapes.
-    async fn execute_request(
+    async fn send_request(
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<SlipVerificationResult, AppError> {
@@ -1266,6 +1329,7 @@ mod tests {
             branch_id: Some("42".to_string()),
             api_url: Some("http://127.0.0.1:1/api".to_string()),
             auto_verify: true,
+            ..Default::default()
         };
         let service = SlipOKService::from_settings(&both).expect("configured service");
         assert_eq!(

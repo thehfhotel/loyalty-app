@@ -28,7 +28,7 @@ const translations: Record<string, string> = {
   'admin.booking.bookingManagement.slipStatus.pending': 'Pending',
   'admin.booking.bookingManagement.slipStatus.shadowPass': 'System pass (awaiting admin)',
   'admin.booking.bookingManagement.slipStatus.manual': 'Manual check needed',
-  'admin.booking.bookingManagement.slipStatus.unavailable': 'Auto-check unavailable',
+  'admin.booking.bookingManagement.slipStatus.unavailable': 'Auto-check not available — staff will verify',
   'admin.booking.bookingManagement.adminStatus.verified': 'Verified',
   'admin.booking.bookingManagement.adminStatus.needsAction': 'Needs Action',
   'admin.booking.bookingManagement.adminStatus.pending': 'Pending',
@@ -301,7 +301,7 @@ describe('SlipViewerSidebar SlipOK surfacing', () => {
       ['verified', 'Verified'],
       ['shadow_pass', 'System pass (awaiting admin)'],
       ['manual', 'Manual check needed'],
-      ['unavailable', 'Auto-check unavailable'],
+      ['unavailable', 'Auto-check not available — staff will verify'],
     ];
 
     for (const [status, label] of cases) {

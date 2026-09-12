@@ -265,6 +265,17 @@ jobs:
           LINE_PUSH_BUDGET_CAMPAIGN: ${{ vars.LINE_PUSH_BUDGET_CAMPAIGN }}
           LINE_PUSH_BUDGET_RESERVE:  ${{ vars.LINE_PUSH_BUDGET_RESERVE }}
           LINE_PUSH_BUDGET_TOTAL:    ${{ vars.LINE_PUSH_BUDGET_TOTAL }}
+          # SlipOK degradation tracking (A4). Repository *variables*: a
+          # monthly allowance and two alert-tuning numbers are policy, not
+          # credentials, and the owner has to be able to read them back.
+          # SLIPOK_MONTHLY_QUOTA is deliberately unset until the owner
+          # records the plan's real number (A3) — unset means the 80 %
+          # warning never fires, which is better than 80 % of a guess.
+          # The other two fall back to the backend defaults (3 consecutive
+          # failures, 60-minute cooldown) when unset.
+          SLIPOK_MONTHLY_QUOTA:               ${{ vars.SLIPOK_MONTHLY_QUOTA }}
+          SLIPOK_DEGRADE_FAILURE_THRESHOLD:   ${{ vars.SLIPOK_DEGRADE_FAILURE_THRESHOLD }}
+          SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS: ${{ vars.SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS }}
         run: |
           set -euo pipefail
 
@@ -340,6 +351,9 @@ jobs:
             --arg LINE_PUSH_BUDGET_CAMPAIGN "${LINE_PUSH_BUDGET_CAMPAIGN:-}" \
             --arg LINE_PUSH_BUDGET_RESERVE  "${LINE_PUSH_BUDGET_RESERVE:-}" \
             --arg LINE_PUSH_BUDGET_TOTAL    "${LINE_PUSH_BUDGET_TOTAL:-}" \
+            --arg SLIPOK_MONTHLY_QUOTA               "${SLIPOK_MONTHLY_QUOTA:-}" \
+            --arg SLIPOK_DEGRADE_FAILURE_THRESHOLD   "${SLIPOK_DEGRADE_FAILURE_THRESHOLD:-}" \
+            --arg SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS "${SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS:-}" \
             '{
               commit_sha: $commit_sha,
               deploy_payload_b64: $deploy_payload_b64,
@@ -387,7 +401,10 @@ jobs:
                          LINE_PUSH_BUDGET_OPS: $LINE_PUSH_BUDGET_OPS,
                          LINE_PUSH_BUDGET_CAMPAIGN: $LINE_PUSH_BUDGET_CAMPAIGN,
                          LINE_PUSH_BUDGET_RESERVE: $LINE_PUSH_BUDGET_RESERVE,
-                         LINE_PUSH_BUDGET_TOTAL: $LINE_PUSH_BUDGET_TOTAL }
+                         LINE_PUSH_BUDGET_TOTAL: $LINE_PUSH_BUDGET_TOTAL,
+                         SLIPOK_MONTHLY_QUOTA: $SLIPOK_MONTHLY_QUOTA,
+                         SLIPOK_DEGRADE_FAILURE_THRESHOLD: $SLIPOK_DEGRADE_FAILURE_THRESHOLD,
+                         SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS: $SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS }
                        | with_entries(select(.value != "")))' \
           | ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \

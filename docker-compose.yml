@@ -99,6 +99,12 @@ services:
       SLIPOK_API_KEY: ${SLIPOK_API_KEY:-}
       SLIPOK_BRANCH_ID: ${SLIPOK_BRANCH_ID:-}
       SLIPOK_AUTO_VERIFY: ${SLIPOK_AUTO_VERIFY:-}
+      # SlipOK degradation tracking (A4). Blank quota = the 80 % warning is
+      # off, because the plan's real allowance is the owner's to record (A3);
+      # the other two fall back to the backend defaults (3 failures, 60 min).
+      SLIPOK_MONTHLY_QUOTA: ${SLIPOK_MONTHLY_QUOTA:-}
+      SLIPOK_DEGRADE_FAILURE_THRESHOLD: ${SLIPOK_DEGRADE_FAILURE_THRESHOLD:-}
+      SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS: ${SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS:-}
       PROMPTPAY_TAX_ID: ${PROMPTPAY_TAX_ID:-}
       PROMPTPAY_HF_ID: ${PROMPTPAY_HF_ID:-}
       PROMPTPAY_HFVILLE_ID: ${PROMPTPAY_HFVILLE_ID:-}
