@@ -25,10 +25,7 @@ const DEPOSIT_LINK_SYSTEM_USER: &str = "00000000-0000-4000-8000-0000005110b2";
 /// 08:00 on 1 September 2026 in Bangkok, as the instant the database stores.
 fn bangkok(day: &str, hour: i64, minute: i64) -> DateTime<Utc> {
     let date = NaiveDate::parse_from_str(day, "%Y-%m-%d").expect("fixture date");
-    let midnight_utc = date
-        .and_hms_opt(0, 0, 0)
-        .expect("midnight")
-        .and_utc();
+    let midnight_utc = date.and_hms_opt(0, 0, 0).expect("midnight").and_utc();
     // Bangkok is UTC+7 and has been since 1976, so subtracting the offset
     // turns a Bangkok wall clock into the instant stored in `timestamptz`.
     midnight_utc + Duration::hours(hour) + Duration::minutes(minute) - Duration::hours(7)
@@ -262,7 +259,15 @@ async fn seed_world(pool: &PgPool) {
 
     // --- bookings that never went through a link ---------------------------
     // The member app writes neither `property` nor `booking_source`.
-    seed_booking(pool, None, "confirmed", None, None, bangkok("2026-09-01", 12, 0)).await;
+    seed_booking(
+        pool,
+        None,
+        "confirmed",
+        None,
+        None,
+        bangkok("2026-09-01", 12, 0),
+    )
+    .await;
     // The PMS channel writes `pms_booking_id` and no `booking_source` either.
     seed_booking(
         pool,
@@ -288,10 +293,14 @@ async fn funnel(app: &TestApp, admin: &TestUser, query: &str) -> Value {
 /// The bucket for one day and property, or `None` if the endpoint did not
 /// emit one.
 fn bucket<'a>(body: &'a Value, day: &str, property: &str) -> Option<&'a Value> {
-    body["buckets"].as_array().expect("buckets array").iter().find(|b| {
-        b["bucketStart"] == Value::String(day.to_string())
-            && b["property"] == Value::String(property.to_string())
-    })
+    body["buckets"]
+        .as_array()
+        .expect("buckets array")
+        .iter()
+        .find(|b| {
+            b["bucketStart"] == Value::String(day.to_string())
+                && b["property"] == Value::String(property.to_string())
+        })
 }
 
 async fn seed_admin(app: &TestApp, email: &str) -> TestUser {
@@ -416,7 +425,10 @@ async fn deposit_funnel_splits_the_two_properties() {
     assert_eq!(hf_only["property"], "hf");
     assert_eq!(hf_only["totals"]["linksIssued"], 4);
     for entry in hf_only["buckets"].as_array().expect("buckets") {
-        assert_eq!(entry["property"], "hf", "the filter leaked another property");
+        assert_eq!(
+            entry["property"], "hf",
+            "the filter leaked another property"
+        );
     }
 
     let hfville_only = funnel(
@@ -791,7 +803,9 @@ async fn deposit_funnel_refuses_parameters_it_cannot_answer() {
         // `granularity` is interpolated into `date_trunc`, so it is an
         // allowlist and not a passthrough.
         "?granularity=hour",
-        "?granularity=day'); DROP TABLE bookings --",
+        // Percent-encoded, because a raw one is not a valid request URI and
+        // would never reach the handler to be refused.
+        "?granularity=day%27%29%3B%20DROP%20TABLE%20bookings%20--",
         "?property=HF",
         "?property=all",
         "?startDate=01-09-2026",
@@ -826,7 +840,9 @@ async fn the_update_daily_stub_is_gone() {
     // answered `recordsProcessed: 0`. The funnel is computed live, so there
     // is nothing for a daily rollup to materialise and the route is deleted
     // rather than left to look like a job that runs.
-    let response = client.post("/api/analytics/update-daily", &Value::Null).await;
+    let response = client
+        .post("/api/analytics/update-daily", &Value::Null)
+        .await;
     assert_eq!(
         response.status, 404,
         "the stub must be gone, not answering; got {} with body {}",
