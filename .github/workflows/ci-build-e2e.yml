@@ -968,6 +968,7 @@ jobs:
             VITE_API_URL=${{ vars.VITE_API_URL || 'https://loyalty.saichon.com/api' }}
             VITE_DESK_PHONE_HF=${{ vars.DESK_PHONE_HF }}
             VITE_DESK_PHONE_HFVILLE=${{ vars.DESK_PHONE_HFVILLE }}
+            VITE_PDPA_CONTACT_EMAIL=${{ vars.PDPA_CONTACT_EMAIL }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
           platforms: linux/amd64
