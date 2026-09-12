@@ -11,7 +11,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use loyalty_backend::services::push_budget::{
-    PushBucket, PushBudget, PushRefusal, PushResult, PushTargetHash, ReserveOutcome,
+    PushBucket, PushBudget, PushRefusal, PushResult, PushTargetHash,
 };
 use loyalty_backend::types::Property;
 

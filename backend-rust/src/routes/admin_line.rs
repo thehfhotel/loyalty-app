@@ -16,7 +16,11 @@
 //! that matters is LINE's, and an endpoint that let somebody raise the local
 //! cap past the real one would only move the failure from our logs to LINE's.
 
-use axum::{extract::Extension, routing::get, Json, Router};
+use axum::{
+    extract::{Extension, State},
+    routing::get,
+    Json, Router,
+};
 use serde::Serialize;
 
 use crate::error::AppResult;
@@ -44,7 +48,7 @@ pub struct PushBudgetData {
 /// GET /api/admin/line/push-budget
 async fn get_push_budget(
     Extension(user): Extension<AuthUser>,
-    axum::extract::State(state): axum::extract::State<AppState>,
+    State(state): State<AppState>,
 ) -> AppResult<Json<PushBudgetResponse>> {
     require_admin(&user)?;
 
