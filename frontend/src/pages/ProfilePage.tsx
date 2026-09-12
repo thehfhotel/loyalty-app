@@ -17,6 +17,7 @@ import SettingsModal from '../components/profile/SettingsModal';
 import EmojiAvatar from '../components/profile/EmojiAvatar';
 import { ConfirmDialog } from '../components/common/ConfirmDialog';
 import EmailVerificationModal from '../components/profile/EmailVerificationModal';
+import MyDataSection from '../components/profile/MyDataSection';
 import { Badge, Button, Card } from '../components/ui';
 
 const profileSchema = z.object({
@@ -422,6 +423,10 @@ export default function ProfilePage() {
             </Button>
           </div>
         </Card>
+
+        {/* PDPA rights (F3). Below the profile card rather than inside it:
+            these are legal requests with a 30-day clock, not settings. */}
+        <MyDataSection />
 
         {/* Settings Modal */}
         <SettingsModal

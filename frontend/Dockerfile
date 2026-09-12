@@ -51,6 +51,13 @@ ARG VITE_DESK_PHONE_HF=
 ARG VITE_DESK_PHONE_HFVILLE=
 ENV VITE_DESK_PHONE_HF=$VITE_DESK_PHONE_HF
 ENV VITE_DESK_PHONE_HFVILLE=$VITE_DESK_PHONE_HFVILLE
+# PDPA contact address printed on the published privacy notice (F3). Same
+# build-time rule as the desk phones above: CI fills it from the repository
+# variable PDPA_CONTACT_EMAIL; blank = the notice falls back to the desk
+# phone and "contact the front desk", which is a worse answer but never a
+# dead end.
+ARG VITE_PDPA_CONTACT_EMAIL=
+ENV VITE_PDPA_CONTACT_EMAIL=$VITE_PDPA_CONTACT_EMAIL
 RUN npm run build
 
 # 2g. Verify build

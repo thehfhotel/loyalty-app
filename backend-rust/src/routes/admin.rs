@@ -1492,6 +1492,12 @@ pub fn router() -> Router<AppState> {
         // LINE OA push budget (C5): month-to-date usage per bucket per OA,
         // so the guard that silently declines to send is visible to someone.
         .merge(crate::routes::admin_line::router())
+        // PDPA rights requests (F3): the queue, the resolve action and the
+        // s.30 access export. Lives in `routes::privacy` next to the
+        // member surface it answers — splitting the two halves of one
+        // workflow across two modules would put the 409 rule and the
+        // resolve rule out of each other's sight.
+        .merge(crate::routes::privacy::admin_router())
         // Apply auth middleware to all routes
         .layer(middleware::from_fn(auth_middleware))
 }

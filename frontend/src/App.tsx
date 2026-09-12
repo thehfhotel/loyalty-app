@@ -48,6 +48,7 @@ const RoomManagement = lazy(() => import('./pages/admin/RoomManagement'));
 const RoomAvailability = lazy(() => import('./pages/admin/RoomAvailability'));
 const BookingManagement = lazy(() => import('./pages/admin/BookingManagement'));
 const AnalyticsPage = lazy(() => import('./pages/admin/AnalyticsPage'));
+const PrivacyRequestsPage = lazy(() => import('./pages/admin/PrivacyRequestsPage'));
 import { useEffect, useState, useRef } from 'react';
 import { checkPWAInstallPrompt } from './utils/pwaUtils';
 import { notificationService } from './services/notificationService';
@@ -479,6 +480,16 @@ function App() {
           element={
             <ProtectedRoute requiredRole="admin">
               <AnalyticsPage />
+            </ProtectedRoute>
+          }
+        />
+        {/* PDPA rights queue (F3). Admin-only; the member's own surface
+            lives on /profile and the public notice on /privacy. */}
+        <Route
+          path="/admin/privacy-requests"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <PrivacyRequestsPage />
             </ProtectedRoute>
           }
         />

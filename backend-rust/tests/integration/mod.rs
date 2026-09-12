@@ -22,6 +22,7 @@
 //! - `loyalty_test` - Loyalty program tests (/api/loyalty/*)
 //! - `survey_test` - Survey management tests (/api/surveys/*)
 //! - `oauth_test` - OAuth authentication tests (/api/oauth/*)
+//! - `privacy_requests_test` - F3: PDPA rights requests (/api/privacy, /api/admin/privacy)
 //! - `push_budget_test` - C5: the LINE OA free-plan push budget guard
 //! - `slip_agreement_report_test` - A9: the shadow-window agreement report
 //! - `slipok_auto_verify_test` - Automatic SlipOK slip verification
@@ -62,6 +63,7 @@ pub mod health_test;
 pub mod loyalty_test;
 pub mod notification_test;
 pub mod oauth_test;
+pub mod privacy_requests_test;
 pub mod push_budget_test;
 pub mod slip_agreement_report_test;
 pub mod slip_retention_test;
