@@ -1977,7 +1977,8 @@
     "availability": "ความพร้อมห้องพัก",
     "bookings": "การจอง",
     "transactions": "ธุรกรรม",
-    "email": "อีเมล"
+    "email": "อีเมล",
+    "analytics": "การวิเคราะห์"
   },
   "depositLink": {
     "title": "ชำระเงินมัดจำ",
@@ -2143,6 +2144,64 @@
       "withPhone": "ติดต่อแผนกต้อนรับ โทร {{phone}} (ตลอด 24 ชั่วโมง)",
       "withoutPhone": "กรุณาติดต่อแผนกต้อนรับของโรงแรมที่ท่านจอง (ตลอด 24 ชั่วโมง)",
       "anyProperty": "ติดต่อแผนกต้อนรับ (ตลอด 24 ชั่วโมง)"
+    }
+  },
+  "analytics": {
+    "title": "การวิเคราะห์",
+    "subtitle": "ตัวเลขจากลิงก์มัดจำและการจอง",
+    "timezoneNote": "ตัดวันตามเวลากรุงเทพฯ (Asia/Bangkok)",
+    "loadError": "โหลดข้อมูลการวิเคราะห์ไม่สำเร็จ",
+    "filters": {
+      "startDate": "ตั้งแต่วันที่",
+      "endDate": "ถึงวันที่",
+      "granularity": "ช่วงเวลา",
+      "property": "โรงแรม",
+      "allProperties": "ทุกโรงแรม",
+      "unknownProperty": "ไม่ระบุโรงแรม",
+      "day": "รายวัน",
+      "week": "รายสัปดาห์",
+      "month": "รายเดือน",
+      "rangeTooLong": "ช่วงวันที่ต้องไม่เกิน {{max}} วัน",
+      "rangeReversed": "วันที่เริ่มต้องไม่อยู่หลังวันที่สิ้นสุด",
+      "rangeInvalid": "กรุณาเลือกช่วงวันที่ให้ครบ"
+    },
+    "funnel": {
+      "title": "เส้นทางลิงก์มัดจำ",
+      "description": "นับตามวันที่ออกลิงก์ ลิงก์ที่ออกวันจันทร์แล้วจ่ายวันอังคารจะนับอยู่ในวันจันทร์ทุกขั้น",
+      "linksIssued": "ออกลิงก์",
+      "linksOpened": "เปิดลิงก์",
+      "slipsUploaded": "ลิงก์ที่มีสลิป",
+      "machineDecided": "ระบบตรวจแล้ว",
+      "humanDecided": "พนักงานตัดสินแล้ว",
+      "bookingsConfirmed": "ยืนยันการจอง",
+      "ofIssued": "{{percent}}% ของลิงก์ที่ออก",
+      "machineVerdict": "ผลตรวจอัตโนมัติ",
+      "humanDecision": "ผลตัดสิน (พนักงาน/ระบบ)",
+      "verdict": {
+        "verified": "ผ่านอัตโนมัติ",
+        "shadowPass": "ผ่าน (โหมดเงา)",
+        "manual": "ต้องตรวจเอง",
+        "unavailable": "ตรวจไม่ได้",
+        "pending": "รอตรวจ"
+      },
+      "decision": {
+        "verified": "อนุมัติแล้ว",
+        "needsAction": "ให้แก้ไข",
+        "pending": "รอพนักงาน",
+        "autoVerified": "ระบบอนุมัติเอง (ไม่มีพนักงานตรวจ)"
+      },
+      "timings": "เวลาที่ใช้ (มัธยฐาน)",
+      "medianLinkToSlip": "ออกลิงก์ → อัปโหลดสลิป",
+      "medianSlipToDecision": "อัปโหลดสลิป → พนักงานตัดสิน",
+      "minutes": "{{count}} นาที",
+      "bySource": "การจองที่ยืนยันแล้ว แยกตามช่องทาง",
+      "source": {
+        "depositLink": "ลิงก์มัดจำ",
+        "app": "แอป",
+        "channel": "ช่องทาง PMS"
+      },
+      "bucket": "ช่วงเวลา",
+      "noData": "ยังไม่มีข้อมูลในช่วงเวลานี้"
     }
   }
 }

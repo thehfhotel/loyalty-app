@@ -1276,13 +1276,72 @@
     "availability": "房态",
     "bookings": "预订",
     "transactions": "交易",
-    "email": "邮件"
+    "email": "邮件",
+    "analytics": "数据分析"
   },
   "desk": {
     "footer": {
       "withPhone": "联系前台，电话 {{phone}}（24 小时）",
       "withoutPhone": "请联系您预订酒店的前台（24 小时）。",
       "anyProperty": "联系前台（24 小时）"
+    }
+  },
+  "analytics": {
+    "title": "数据分析",
+    "subtitle": "押金链接与订单数据",
+    "timezoneNote": "按曼谷时间（Asia/Bangkok）划分日期",
+    "loadError": "无法加载分析数据",
+    "filters": {
+      "startDate": "起始日期",
+      "endDate": "结束日期",
+      "granularity": "时间粒度",
+      "property": "酒店",
+      "allProperties": "全部酒店",
+      "unknownProperty": "未指定酒店",
+      "day": "按日",
+      "week": "按周",
+      "month": "按月",
+      "rangeTooLong": "日期范围不得超过 {{max}} 天",
+      "rangeReversed": "开始日期不得晚于结束日期",
+      "rangeInvalid": "请选择完整的日期范围"
+    },
+    "funnel": {
+      "title": "押金链接转化流程",
+      "description": "按链接发出的日期统计：周一发出、周二付款的链接，各阶段都计入周一。",
+      "linksIssued": "已发出链接",
+      "linksOpened": "已打开",
+      "slipsUploaded": "有水单的链接",
+      "machineDecided": "系统已核验",
+      "humanDecided": "员工已处理",
+      "bookingsConfirmed": "订单已确认",
+      "ofIssued": "占已发出链接的 {{percent}}%",
+      "machineVerdict": "系统核验结果",
+      "humanDecision": "处理结果（员工／系统）",
+      "verdict": {
+        "verified": "自动通过",
+        "shadowPass": "通过（影子模式）",
+        "manual": "需人工核验",
+        "unavailable": "无法核验",
+        "pending": "尚未核验"
+      },
+      "decision": {
+        "verified": "已通过",
+        "needsAction": "需重新提交",
+        "pending": "等待员工",
+        "autoVerified": "系统自动通过（无员工处理）"
+      },
+      "timings": "耗时（中位数）",
+      "medianLinkToSlip": "发出链接 → 上传水单",
+      "medianSlipToDecision": "上传水单 → 员工处理",
+      "minutes": "{{count}} 分钟",
+      "bySource": "已确认订单来源分布",
+      "source": {
+        "depositLink": "押金链接",
+        "app": "应用",
+        "channel": "PMS 渠道"
+      },
+      "bucket": "时间段",
+      "noData": "该时间段暂无数据"
     }
   }
 }

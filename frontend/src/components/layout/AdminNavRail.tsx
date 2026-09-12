@@ -15,6 +15,7 @@ const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { to: '/admin/room-availability', labelKey: 'adminNav.availability' },
   { to: '/admin/booking-management', labelKey: 'adminNav.bookings' },
   { to: '/admin/transaction-history', labelKey: 'adminNav.transactions' },
+  { to: '/admin/analytics', labelKey: 'adminNav.analytics' },
   { to: '/admin/email-service', labelKey: 'adminNav.email' },
 ];
 

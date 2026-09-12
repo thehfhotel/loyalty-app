@@ -1939,7 +1939,8 @@
     "availability": "Availability",
     "bookings": "Bookings",
     "transactions": "Transactions",
-    "email": "Email"
+    "email": "Email",
+    "analytics": "Analytics"
   },
   "depositLink": {
     "title": "Pay your deposit",
@@ -2105,6 +2106,64 @@
       "withPhone": "Contact the front desk on {{phone}} (open 24 hours)",
       "withoutPhone": "Please contact the front desk of the hotel you booked (open 24 hours).",
       "anyProperty": "Contact the front desk (open 24 hours)"
+    }
+  },
+  "analytics": {
+    "title": "Analytics",
+    "subtitle": "Deposit links and bookings, by the numbers",
+    "timezoneNote": "Days are cut on Bangkok time (Asia/Bangkok)",
+    "loadError": "Could not load analytics",
+    "filters": {
+      "startDate": "From",
+      "endDate": "To",
+      "granularity": "Period",
+      "property": "Property",
+      "allProperties": "All properties",
+      "unknownProperty": "No property",
+      "day": "Daily",
+      "week": "Weekly",
+      "month": "Monthly",
+      "rangeTooLong": "The date range must not exceed {{max}} days",
+      "rangeReversed": "The start date must not be after the end date",
+      "rangeInvalid": "Pick both ends of the date range"
+    },
+    "funnel": {
+      "title": "Deposit link funnel",
+      "description": "Counted against the day the link was issued: a link issued Monday and paid Tuesday stays in Monday's row at every stage.",
+      "linksIssued": "Links issued",
+      "linksOpened": "Opened",
+      "slipsUploaded": "Links with a slip",
+      "machineDecided": "Machine checked",
+      "humanDecided": "Staff decided",
+      "bookingsConfirmed": "Bookings confirmed",
+      "ofIssued": "{{percent}}% of links issued",
+      "machineVerdict": "Machine verdict",
+      "humanDecision": "Decision (staff / machine)",
+      "verdict": {
+        "verified": "Auto-verified",
+        "shadowPass": "Passed (shadow mode)",
+        "manual": "Needs a human",
+        "unavailable": "No answer",
+        "pending": "Not checked yet"
+      },
+      "decision": {
+        "verified": "Verified",
+        "needsAction": "Needs action",
+        "pending": "Awaiting staff",
+        "autoVerified": "Auto-verified (no staff)"
+      },
+      "timings": "Time taken (median)",
+      "medianLinkToSlip": "Link issued → slip uploaded",
+      "medianSlipToDecision": "Slip uploaded → staff decision",
+      "minutes": "{{count}} min",
+      "bySource": "Confirmed bookings by source",
+      "source": {
+        "depositLink": "Deposit link",
+        "app": "App",
+        "channel": "PMS channel"
+      },
+      "bucket": "Period",
+      "noData": "Nothing in this period yet"
     }
   }
 }

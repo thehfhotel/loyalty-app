@@ -56,21 +56,30 @@ test.describe('Admin Analytics Operations', () => {
     });
   });
 
-  test.describe('Daily Analytics Update', () => {
-    test('Update daily analytics endpoint should require authentication', async ({ request }) => {
-      const response = await request.post(`${backendUrl}/api/analytics/update-daily`, {
-        data: {},
-        headers: { 'Content-Type': 'application/json' },
-      });
+  test.describe('Deposit Funnel Analytics', () => {
+    test('Deposit funnel endpoint should require authentication', async ({ request }) => {
+      const response = await request.get(`${backendUrl}/api/analytics/deposit-funnel`);
       expect([401, 403]).toContain(response.status());
     });
 
-    test('Update daily analytics endpoint should exist', async ({ request }) => {
+    test('Deposit funnel endpoint should exist', async ({ request }) => {
+      const response = await request.get(`${backendUrl}/api/analytics/deposit-funnel`);
+      expect(response.status()).not.toBe(404);
+    });
+  });
+
+  test.describe('Daily Analytics Update (removed)', () => {
+    // `POST /api/analytics/update-daily` logged a line, stored nothing and
+    // answered `recordsProcessed: 0`. The deposit funnel is computed live
+    // from the tables that already hold the data, so there is no rollup for
+    // a daily job to materialise and the stub was deleted rather than left
+    // looking like a job that runs. This test keeps it deleted.
+    test('Update daily analytics endpoint should be gone', async ({ request }) => {
       const response = await request.post(`${backendUrl}/api/analytics/update-daily`, {
         data: {},
         headers: { 'Content-Type': 'application/json' },
       });
-      expect(response.status()).not.toBe(404);
+      expect(response.status()).toBe(404);
     });
   });
 });
@@ -206,7 +215,7 @@ test.describe('Admin API Contract Tests', () => {
       { method: 'GET', path: '/api/analytics/coupon-usage' },
       { method: 'GET', path: '/api/analytics/profile-changes' },
       { method: 'GET', path: '/api/analytics/user-engagement' },
-      { method: 'POST', path: '/api/analytics/update-daily' },
+      { method: 'GET', path: '/api/analytics/deposit-funnel' },
     ];
 
     for (const route of routes) {
