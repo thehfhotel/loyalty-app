@@ -395,6 +395,27 @@
     }
   },
   "admin": {
+    "booking": {
+      "bookingManagement": {
+        "slipStatus": {
+          "verified": "已核验",
+          "failed": "核验失败",
+          "pending": "待核验",
+          "quotaExceeded": "超出配额",
+          "shadowPass": "系统通过（待管理员确认）",
+          "manual": "需人工核验",
+          "unavailable": "自动核验暂不可用，将由员工核验"
+        },
+        "slipViewer": {
+          "autoVerified": "已自动核验",
+          "awaitingStaffReview": "此凭证等待员工核验",
+          "slipokTransRef": "交易参考号",
+          "copyTransRef": "复制交易参考号",
+          "transRefCopied": "已复制交易参考号",
+          "transRefCopyFailed": "复制失败，请从屏幕上读取参考号"
+        }
+      }
+    },
     "perks": {
       "title": "等级与礼遇",
       "subtitle": "管理会员等级门槛及展示给会员的礼遇",
@@ -1255,7 +1276,22 @@
     "propertyAccount": "款项将支付到{{property}}的账户",
     "slipErased": "已于 {{date}} 按数据保留政策删除",
     "slipErasedNote": "付款记录本身未受影响。",
-    "slipUnavailable": "无转账凭证图片"
+    "slipUnavailable": "无转账凭证图片",
+    "slipok": {
+      "reason": {
+        "amount_mismatch": "转账金额与应付金额不符",
+        "receiver_mismatch": "转入的不是酒店账户",
+        "duplicate": "此转账凭证已被使用",
+        "slip_invalid": "无法读取凭证信息",
+        "booking_not_payable": "此预订目前无法收款",
+        "confirm_failed": "核验结果保存失败",
+        "confirm_refused": "预订确认失败，房间已释放，需到前台重新预订",
+        "quota_exceeded": "自动核验配额已用完",
+        "api_error": "自动核验服务返回错误",
+        "not_configured": "尚未配置自动核验",
+        "timeout": "自动核验服务未在规定时间内响应"
+      }
+    }
   },
   "nav": {
     "home": "首页",

@@ -11,9 +11,12 @@ import {
   FiMaximize2,
   FiList,
   FiChevronLeft,
-  FiChevronRight
+  FiChevronRight,
+  FiCopy
 } from 'react-icons/fi';
 import { formatDateTimeToEuropean } from '../../utils/dateFormatter';
+import { formatBangkokDateTime } from '../../utils/bangkokTime';
+import { logger } from '../../utils/logger';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { Badge, Button, type BadgeTone } from '../ui';
@@ -329,6 +332,23 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   }, [listSlip, slipDetailQuery.data]);
 
   /**
+   * The bank reference the machine anchored an automatic decision on (A6).
+   *
+   * Read straight off the per-slip detail instead of through the merge
+   * above: `slipokTransRef` exists only on `AdminSlip` — the booking list
+   * projection does not carry it — so there is no list value to fall back
+   * to, and a reference left over from the previously selected slip would be
+   * evidence about the wrong payment.
+   */
+  const slipokTransRef: string | null = React.useMemo(() => {
+    const detail = slipDetailQuery.data;
+    if (!detail) {
+      return null;
+    }
+    return detail.id === currentSlip?.id ? (detail.slipokTransRef ?? null) : null;
+  }, [slipDetailQuery.data, currentSlip]);
+
+  /**
    * "The slip is verified, the booking is not" — the A11 line.
    *
    * Two sources, because neither alone covers the desk's day. The audit row
@@ -438,20 +458,30 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
   };
 
   /**
-   * Desk-facing slip badge: one distinct label per locked `slipok_status`
-   * (unlike the guest badge, which collapses everything but `verified` into
-   * "being checked"), plus the machine's reason and the time it decided.
-   * Reception seeing *why* the machine stopped is the whole point — without
-   * it the desk re-checks every slip by hand and the automation buys
-   * nothing. `failed`/`quota_exceeded` stay for rows written before the
-   * vocabulary lock.
+   * The desk's machine-check block (A6): everything SlipOK concluded about
+   * the slip on screen, in one place.
+   *
+   * One distinct label per locked `slipok_status` (unlike the guest badge,
+   * which collapses everything but `verified` into "being checked"), the
+   * machine's reason in the desk's own language, the bank reference an
+   * automatic decision is anchored on, and when it decided. Reception
+   * seeing *why* the machine stopped is the whole point — without it the
+   * desk re-checks every slip by hand and the automation buys nothing.
+   * `failed`/`quota_exceeded` stay for rows written before the vocabulary
+   * lock.
+   *
+   * What it deliberately does not do is decide for the desk: Verify and
+   * Needs action stay on screen for every status, `verified` included. A
+   * machine verdict is evidence, not an instruction.
    */
   const SlipStatusBadge: React.FC<{
     status: string | null;
     verifiedAt: string | null;
     reason?: string | null;
     checkedAt?: string | null;
-  }> = ({ status, verifiedAt, reason, checkedAt }) => {
+    transRef?: string | null;
+    autoVerified?: boolean;
+  }> = ({ status, verifiedAt, reason, checkedAt, transRef, autoVerified = false }) => {
     // Keyed by the locked vocabulary, not `string`: adding a status to
     // `SLIPOK_STATUSES` must break this build rather than quietly render the
     // machine's new verdict as "not yet checked" at the desk.
@@ -468,29 +498,106 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
     // A status this bundle predates still renders — as "pending" — rather
     // than as a blank badge; `deskSlipOkStatus` is the only place that
     // decision is made.
-    const badge = badges[deskSlipOkStatus(status)];
+    const deskStatus = deskSlipOkStatus(status);
+    const badge = badges[deskStatus];
     const reasonKey = slipOkReasonKey(reason);
-    // An unknown reason still reaches the desk verbatim — a raw key beats a
-    // blank space when reception is deciding whether to call the guest.
-    const reasonText = reasonKey ? t(reasonKey) : (reason ?? null);
     const decidedAt = checkedAt ?? verifiedAt;
+    // Bangkok, not the browser's zone: reception reads this time out loud to
+    // a guest on the phone, and a laptop left on UTC would report a 17:05
+    // check as 10:05 — the same reason `utils/bangkokTime` exists for the
+    // deposit-link desk.
+    const checkedAtText = formatBangkokDateTime(decidedAt);
+    // Nothing has decided this slip yet (`pending`), or the machine could
+    // not (`unavailable`). Both mean the same thing to the desk — this one
+    // is still theirs — and a sentence says it where a badge has to be
+    // interpreted.
+    const awaitsStaffReview = deskStatus === 'pending' || deskStatus === 'unavailable';
+
+    const handleCopyTransRef = () => {
+      if (!transRef) {
+        return;
+      }
+      void (async () => {
+        try {
+          await navigator.clipboard.writeText(transRef);
+          toast.success(t('admin.booking.bookingManagement.slipViewer.transRefCopied'));
+        } catch (error) {
+          logger.error(
+            'Failed to copy the SlipOK transaction reference:',
+            error instanceof Error ? error.message : String(error)
+          );
+          // The reference is on screen either way, so the desk can still read
+          // it off — which is what the message says, rather than reporting a
+          // dead end.
+          toast.error(t('admin.booking.bookingManagement.slipViewer.transRefCopyFailed'));
+        }
+      })();
+    };
 
     return (
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1" data-testid="slipok-machine-check">
         <Badge tone={badge.tone}>{badge.text}</Badge>
-        {reasonText && (
-          <span className="text-fine text-ink-muted">
-            {t('admin.booking.bookingManagement.slipViewer.slipokReason')}: {reasonText}
+        {/* The machine confirmed this one itself. Reception's real question
+            is "has anything already decided this slip", and `autoVerified`
+            is the only field that answers it: the admin badge beside it
+            reads "verified" whether a human or the SlipOK system actor
+            decided. */}
+        {autoVerified && (
+          <span
+            className="flex items-center gap-1 text-fine text-success-700"
+            data-testid="slipok-auto-verified"
+          >
+            <FiCheck className="h-3 w-3 shrink-0" aria-hidden="true" />
+            {t('admin.booking.bookingManagement.slipViewer.autoVerified')}
           </span>
         )}
-        {decidedAt && (
+        {awaitsStaffReview && (
+          <span className="text-fine text-ink-muted" data-testid="slipok-awaits-review">
+            {t('admin.booking.bookingManagement.slipViewer.awaitingStaffReview')}
+          </span>
+        )}
+        {reason && (
+          <span className="text-fine text-ink-muted">
+            {t('admin.booking.bookingManagement.slipViewer.slipokReason')}:{' '}
+            {reasonKey ? (
+              t(reasonKey)
+            ) : (
+              // An unknown reason still reaches the desk verbatim — a raw key
+              // beats a blank space when reception is deciding whether to
+              // call the guest — but set in mono, so it reads as a machine
+              // value rather than as wording somebody chose.
+              <code className="font-mono">{reason}</code>
+            )}
+          </span>
+        )}
+        {transRef && (
+          // The forensic anchor for an automatic decision: the reference the
+          // desk pastes into the bank's own search when a guest disputes one.
+          // Copyable because retyping a bank reference by eye is how the
+          // wrong transfer gets looked up.
+          <span
+            className="flex items-center gap-1 text-fine text-ink-muted"
+            data-testid="slipok-trans-ref"
+          >
+            {t('admin.booking.bookingManagement.slipViewer.slipokTransRef')}:{' '}
+            <code className="font-mono text-ink">{transRef}</code>
+            <button
+              type="button"
+              onClick={handleCopyTransRef}
+              aria-label={t('admin.booking.bookingManagement.slipViewer.copyTransRef')}
+              className="rounded-full p-1 text-ink-muted transition hover:bg-surface-sunken hover:text-ink"
+            >
+              <FiCopy className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </span>
+        )}
+        {checkedAtText && (
           // Labelled, because the admin badge beside it prints its own bare
           // timestamp — an unlabelled pair leaves reception guessing which
           // one is the machine's check, exactly when they are deciding
           // whether that verdict is stale.
           <span className="text-fine text-ink-muted">
-            {t('admin.booking.bookingManagement.slipViewer.slipokCheckedAt')}:{' '}
-            {formatDateTimeToEuropean(decidedAt)}
+            {t('admin.booking.bookingManagement.slipViewer.slipokCheckedAt')}: {checkedAtText}
           </span>
         )}
       </div>
@@ -604,6 +711,8 @@ const SlipViewerSidebar: React.FC<SlipViewerSidebarProps> = ({
               verifiedAt={currentSlip.slipokVerifiedAt}
               reason={currentSlip.slipokReason}
               checkedAt={currentSlip.slipokCheckedAt}
+              transRef={slipokTransRef}
+              autoVerified={currentSlip.autoVerified ?? false}
             />
           </div>
           <div>

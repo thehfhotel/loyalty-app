@@ -76,6 +76,17 @@ const translations: Record<string, string> = {
   'admin.booking.bookingManagement.auditActions.bookingNotConfirmed': 'Booking not confirmed',
   'admin.booking.bookingManagement.auditActions.slipVerifyReverted':
     'Automatic slip verification reverted',
+  // A6 — the machine-check block.
+  'admin.booking.bookingManagement.slipViewer.autoVerified': 'Checked automatically by SlipOK',
+  'admin.booking.bookingManagement.slipViewer.awaitingStaffReview':
+    'This slip is waiting for staff to check it',
+  'admin.booking.bookingManagement.slipViewer.slipokTransRef': 'Transaction reference',
+  'admin.booking.bookingManagement.slipViewer.copyTransRef': 'Copy transaction reference',
+  'admin.booking.bookingManagement.slipViewer.transRefCopied': 'Transaction reference copied',
+  'admin.booking.bookingManagement.slipViewer.transRefCopyFailed':
+    'Could not copy — read the reference off the screen',
+  'payment.slipok.reason.slip_invalid': 'The slip could not be read',
+  'payment.slipok.reason.timeout': 'The check did not answer in time',
 };
 
 /** An `AdminSlipResponse` as `admin_slips.rs` serialises it. */
@@ -356,6 +367,205 @@ describe('SlipViewerSidebar SlipOK surfacing', () => {
 
     expect(screen.getByRole('button', { name: 'Verify' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Needs Action' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * A6 — the machine-check block: what SlipOK concluded, said once, so
+ * reception stops re-checking every slip by hand.
+ *
+ * Scoped to the block's own container rather than to the column: the admin
+ * badge beside it renders "Verified" and a bare timestamp of its own, and an
+ * unscoped query can be satisfied by the wrong one.
+ */
+function machineCheck() {
+  return within(screen.getByTestId('slipok-machine-check'));
+}
+
+/** Every test here also proves the desk keeps its own decision. */
+function expectDeskControlsAvailable() {
+  expect(screen.getByRole('button', { name: 'Verify' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Needs Action' })).toBeInTheDocument();
+}
+
+/**
+ * `userEvent.setup()` installs its own `navigator.clipboard` stub, so a spy
+ * planted before it is gone by the time the test clicks. Plant it after.
+ */
+function installClipboardSpy() {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    writable: true,
+    value: { writeText },
+  });
+  return writeText;
+}
+
+describe('SlipViewerSidebar machine-check block (A6)', () => {
+  beforeEach(() => {
+    // The decision record lives on the per-slip read, so every test here
+    // states it rather than inheriting a previous test's implementation.
+    mockGetSlip.mockReset();
+  });
+
+  it('reads a machine-verified slip as decided, with the reference it decided on', async () => {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({
+        slipokStatus: 'verified',
+        slipokTransRef: '014123456789ABCD',
+        slipokCheckedAt: '2027-06-01T10:05:00Z',
+        adminStatus: 'verified',
+        adminVerifiedAt: '2027-06-01T10:05:01Z',
+        autoVerified: true,
+      })
+    );
+
+    renderSidebar({ slipokStatus: 'verified' });
+
+    await screen.findByText('014123456789ABCD');
+    expect(machineCheck().getByText('014123456789ABCD')).toBeInTheDocument();
+    expect(machineCheck().getByText('Verified')).toBeInTheDocument();
+    // Decided by the machine, so nothing is owed to the desk — but the desk
+    // may still overrule it.
+    expect(screen.queryByTestId('slipok-awaits-review')).not.toBeInTheDocument();
+    expectDeskControlsAvailable();
+  });
+
+  it('reads shadow_pass as the machine passing a slip a human still has to confirm', async () => {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({ slipokStatus: 'shadow_pass', slipokTransRef: 'SHADOWREF01' })
+    );
+
+    renderSidebar({ slipokStatus: 'shadow_pass' });
+
+    await screen.findByText('SHADOWREF01');
+    expect(machineCheck().getByText('System pass (awaiting admin)')).toBeInTheDocument();
+    expect(machineCheck().getByText('SHADOWREF01')).toBeInTheDocument();
+    expectDeskControlsAvailable();
+  });
+
+  it('reads manual as a verdict with a reason, and no reference to lean on', async () => {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({ slipokStatus: 'manual', slipokReason: 'slip_invalid' })
+    );
+
+    renderSidebar({ slipokStatus: 'manual' });
+
+    await screen.findByText(/The slip could not be read/);
+    expect(machineCheck().getByText('Manual check needed')).toBeInTheDocument();
+    expect(machineCheck().getByText(/The slip could not be read/)).toBeInTheDocument();
+    // A rejected slip stores no bank reference — nothing to copy, and no
+    // empty label pretending otherwise.
+    expect(screen.queryByTestId('slipok-trans-ref')).not.toBeInTheDocument();
+    expectDeskControlsAvailable();
+  });
+
+  it('says an unavailable slip is waiting for staff, and why the machine could not', async () => {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({ slipokStatus: 'unavailable', slipokReason: 'timeout' })
+    );
+
+    renderSidebar({ slipokStatus: 'unavailable' });
+
+    await screen.findByText(/The check did not answer in time/);
+    expect(
+      machineCheck().getByText('Auto-check not available — staff will verify')
+    ).toBeInTheDocument();
+    expect(
+      machineCheck().getByText('This slip is waiting for staff to check it')
+    ).toBeInTheDocument();
+    expectDeskControlsAvailable();
+  });
+
+  it('says a pending slip is waiting for staff too — nothing has decided it', async () => {
+    mockGetSlip.mockResolvedValue(slipResponse({ slipokStatus: 'pending' }));
+
+    renderSidebar({ slipokStatus: 'pending' });
+
+    await waitFor(() => expect(mockGetSlip).toHaveBeenCalled());
+    expect(machineCheck().getByText('Pending')).toBeInTheDocument();
+    expect(
+      machineCheck().getByText('This slip is waiting for staff to check it')
+    ).toBeInTheDocument();
+    expectDeskControlsAvailable();
+  });
+
+  it('renders a reason this bundle has no wording for as the raw machine value', async () => {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({ slipokStatus: 'manual', slipokReason: 'brand_new_reason' })
+    );
+
+    renderSidebar({ slipokStatus: 'manual', slipokReason: 'brand_new_reason' });
+
+    const raw = await screen.findByText('brand_new_reason');
+    // In mono, so the desk reads it as a machine value rather than as
+    // wording somebody chose — and never as a blank line.
+    expect(raw.tagName).toBe('CODE');
+    expect(raw).toHaveClass('font-mono');
+  });
+
+  it('says in words that a machine confirmed the slip', async () => {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({
+        slipokStatus: 'verified',
+        adminStatus: 'verified',
+        adminVerifiedAt: '2027-06-01T10:05:01Z',
+        autoVerified: true,
+      })
+    );
+
+    renderSidebar({ slipokStatus: 'verified' });
+
+    await screen.findByTestId('slipok-auto-verified');
+    expect(
+      within(screen.getByTestId('slipok-auto-verified')).getByText(
+        'Checked automatically by SlipOK'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('does not claim an automatic check on a slip a human verified', async () => {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({
+        slipokStatus: 'verified',
+        adminStatus: 'verified',
+        adminVerifiedAt: '2027-06-01T10:05:01Z',
+        autoVerified: false,
+      })
+    );
+
+    renderSidebar({ slipokStatus: 'verified' });
+
+    await waitFor(() => expect(mockGetSlip).toHaveBeenCalled());
+    expect(screen.queryByTestId('slipok-auto-verified')).not.toBeInTheDocument();
+  });
+
+  it('shows the check time in Asia/Bangkok, not in the desk laptop\'s zone', async () => {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({ slipokStatus: 'manual', slipokCheckedAt: '2027-06-01T10:05:00Z' })
+    );
+
+    renderSidebar({ slipokStatus: 'manual' });
+
+    // 10:05Z is 17:05 in Bangkok. Thailand has no DST, so this is exact.
+    await screen.findByText(/^Checked: /);
+    expect(machineCheck().getByText(/^Checked: /)).toHaveTextContent(/01\/06\/2027, 17:05/);
+  });
+
+  it('copies the transaction reference reception would otherwise retype', async () => {
+    mockGetSlip.mockResolvedValue(
+      slipResponse({ slipokStatus: 'verified', slipokTransRef: '014123456789ABCD' })
+    );
+
+    renderSidebar({ slipokStatus: 'verified' });
+    const user = userEvent.setup();
+    const writeText = installClipboardSpy();
+
+    const copy = await screen.findByRole('button', { name: 'Copy transaction reference' });
+    await user.click(copy);
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('014123456789ABCD'));
   });
 });
 
