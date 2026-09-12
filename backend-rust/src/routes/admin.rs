@@ -13,7 +13,8 @@ use axum::{
 };
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
+use std::collections::HashMap;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -24,6 +25,7 @@ use crate::models::user::UserRole;
 use crate::models::user_loyalty::UserLoyaltyResponse;
 use crate::models::user_profile::UserProfileResponse;
 use crate::state::AppState;
+use crate::types::Property;
 
 // ============================================================================
 // Request/Response DTOs
@@ -270,6 +272,12 @@ pub struct DashboardStats {
     pub new_users_this_month: i64,
     pub users_by_tier: Vec<TierUserCount>,
     pub users_by_role: Vec<RoleUserCount>,
+    /// LINE OA follower counts (D2b). Kept camelCase like the rest of the
+    /// admin routes even though the sibling fields on this struct are not
+    /// renamed — see `LineFollowersStats` doc comment for the source table
+    /// and the semantics of the 7/30-day windows.
+    #[serde(rename = "lineFollowers")]
+    pub line_followers: LineFollowersStats,
 }
 
 /// User count by tier
@@ -285,6 +293,49 @@ pub struct TierUserCount {
 pub struct RoleUserCount {
     pub role: String,
     pub count: i64,
+}
+
+/// LINE OA follower counts for one property.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyLineFollowerCounts {
+    pub property: String,
+    /// `line_friendships.is_friend = true` rows for this property.
+    pub current_friends: i64,
+    /// `line_friendships.is_friend = false` rows for this property.
+    pub unfollowed: i64,
+    /// Rows whose `followed_at` falls in the last 7 days, regardless of
+    /// current `is_friend` — an acquisition count, not a retention one.
+    pub followed_last_7_days: i64,
+    /// Same as above, 30-day window.
+    pub followed_last_30_days: i64,
+}
+
+/// Same shape as [`PropertyLineFollowerCounts`], summed across properties.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineFollowerTotals {
+    pub current_friends: i64,
+    pub unfollowed: i64,
+    pub followed_last_7_days: i64,
+    pub followed_last_30_days: i64,
+}
+
+/// LINE OA follower counts, per property and totalled.
+///
+/// Backed by `line_friendships` (migration
+/// `20260710000000_property_line_channel.sql`: `line_user_id, property,
+/// is_friend, followed_at, updated_at`, primary key `(line_user_id,
+/// property)`). `followed_at` is reset to `NOW()` on every follow and
+/// re-follow and is left untouched by unfollow (`routes/line_webhook.rs`),
+/// so it is the timestamp used for the "followed in the last N days"
+/// windows — `updated_at` would also move on unfollow and so cannot answer
+/// that question.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineFollowersStats {
+    pub by_property: Vec<PropertyLineFollowerCounts>,
+    pub total: LineFollowerTotals,
 }
 
 /// Response for dashboard stats
@@ -903,6 +954,69 @@ async fn get_stats(
         })
         .collect();
 
+    // LINE OA followers, per property (D2b — see `LineFollowersStats` doc
+    // comment). Runtime `sqlx::query` (not `query!`/`query_as!`): the
+    // `line_friendships` table predates this endpoint and this keeps the
+    // change out of the compile-time `.sqlx` offline cache entirely.
+    let line_followers_7d_cutoff = Utc::now() - Duration::days(7);
+    let line_followers_30d_cutoff = Utc::now() - Duration::days(30);
+    let line_followers_rows = sqlx::query(
+        r#"
+        SELECT
+            property,
+            COUNT(*) FILTER (WHERE is_friend) AS current_friends,
+            COUNT(*) FILTER (WHERE NOT is_friend) AS unfollowed,
+            COUNT(*) FILTER (WHERE followed_at >= $1) AS followed_last_7_days,
+            COUNT(*) FILTER (WHERE followed_at >= $2) AS followed_last_30_days
+        FROM line_friendships
+        GROUP BY property
+        "#,
+    )
+    .bind(line_followers_7d_cutoff)
+    .bind(line_followers_30d_cutoff)
+    .fetch_all(state.db())
+    .await?;
+
+    let mut line_followers_by_property: HashMap<String, PropertyLineFollowerCounts> =
+        HashMap::new();
+    for row in line_followers_rows {
+        let property: String = row.try_get("property")?;
+        line_followers_by_property.insert(
+            property.clone(),
+            PropertyLineFollowerCounts {
+                property,
+                current_friends: row.try_get("current_friends")?,
+                unfollowed: row.try_get("unfollowed")?,
+                followed_last_7_days: row.try_get("followed_last_7_days")?,
+                followed_last_30_days: row.try_get("followed_last_30_days")?,
+            },
+        );
+    }
+
+    // Always report every known property (even with zero rows) rather than
+    // only the ones with a `line_friendships` row, and accumulate the total
+    // across properties in the same pass.
+    let mut line_followers_total = LineFollowerTotals::default();
+    let line_followers_by_property_list: Vec<PropertyLineFollowerCounts> = Property::ALL
+        .iter()
+        .map(|property| {
+            let counts = line_followers_by_property
+                .remove(property.as_str())
+                .unwrap_or_else(|| PropertyLineFollowerCounts {
+                    property: property.as_str().to_string(),
+                    current_friends: 0,
+                    unfollowed: 0,
+                    followed_last_7_days: 0,
+                    followed_last_30_days: 0,
+                });
+            line_followers_total.current_friends += counts.current_friends;
+            line_followers_total.unfollowed += counts.unfollowed;
+            line_followers_total.followed_last_7_days += counts.followed_last_7_days;
+            line_followers_total.followed_last_30_days += counts.followed_last_30_days;
+            counts
+        })
+        .collect();
+
     Ok(Json(StatsResponse {
         success: true,
         data: DashboardStats {
@@ -915,6 +1029,10 @@ async fn get_stats(
             new_users_this_month,
             users_by_tier,
             users_by_role,
+            line_followers: LineFollowersStats {
+                by_property: line_followers_by_property_list,
+                total: line_followers_total,
+            },
         },
     }))
 }
