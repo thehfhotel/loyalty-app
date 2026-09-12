@@ -6,6 +6,7 @@
 //! contract is locked in docs/launch-plan.md.
 
 use chrono::{DateTime, NaiveDate, Utc};
+use percent_encoding::{utf8_percent_encode, AsciiSet, NON_ALPHANUMERIC};
 use reqwest::Url;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -76,6 +77,18 @@ const HOLD_GUARD_REDIS_TIMEOUT: std::time::Duration = std::time::Duration::from_
 /// It is a ceiling, not a format — the character rule below is what
 /// actually decides.
 const MAX_PMS_BOOKING_ID_LEN: usize = 100;
+
+/// Characters that survive into a path segment untouched.
+///
+/// [`validate_pms_booking_id`] has already rejected everything outside
+/// `[A-Za-z0-9_-]`, so for an id this client accepts the encoder is a
+/// no-op and the request on the wire is byte-for-byte what it always was.
+/// It stays because the relative path in [`action_url`] is assembled before
+/// it is joined, and a reader should not have to re-derive that the id was
+/// checked one function up: whatever the allow-list is ever loosened to, a
+/// `/`, `?`, `#` or `..` in an id comes out of here percent-encoded and
+/// cannot become a path element.
+const PMS_PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC.remove(b'-').remove(b'_');
 
 /// Why `PMS_BASE_URL` may not be used to build requests.
 ///
@@ -253,40 +266,44 @@ pub enum PmsActionUrlError {
     /// The booking id is not a plain token.
     #[error("{0}")]
     BookingId(#[from] PmsBookingIdError),
-    /// The client's base URL cannot take path segments. Unreachable for a
-    /// base that came through [`validate_pms_base_url`] — http and https
-    /// are always hierarchical — and present so a future scheme change
-    /// becomes an error rather than a request to the bare base URL.
-    #[error("PMS base URL cannot take a path")]
-    BaseNotHierarchical,
+    /// The relative path did not resolve against the base. Unreachable for
+    /// a base that came through [`validate_pms_base_url`] and an id that
+    /// came through [`validate_pms_booking_id`]; present so a future change
+    /// to either becomes an error rather than a request somewhere else.
+    #[error("PMS action URL could not be built")]
+    Malformed,
 }
 
 /// The per-booking action URL, or the reason it could not be built.
 ///
 /// Split out of [`PmsChannelClient::post_action`] so validation and URL
-/// construction are one testable step, and built with
-/// [`Url::path_segments_mut`] rather than `format!`: every segment is
-/// percent-encoded by the `url` crate as it is pushed, so a `/` in a
-/// segment becomes `%2F` and **cannot** add a path element, and the host,
-/// scheme, port and any base path prefix come from the parsed base and are
-/// not reachable from the id at all. `validate_pms_booking_id` still runs
-/// first — the encoder makes a bad id harmless, the allow-list makes it
-/// loud.
-fn action_url(base: &Url, pms_booking_id: &str, action: &str) -> Result<Url, PmsActionUrlError> {
+/// construction are one testable step.
+///
+/// **The shape that matters**: the config-derived part of the URL — scheme,
+/// host, port, any base path prefix — comes only from the parsed `base`,
+/// and the caller-derived part is a *relative* path joined onto it. Nothing
+/// formats a config value into a string. The id passes
+/// [`validate_pms_booking_id`] (so it is `[A-Za-z0-9_-]` and has no `/`,
+/// `?`, `#` or `..` to escape its segment with) and is percent-encoded
+/// anyway, which keeps that guarantee local rather than something a reader
+/// has to go and check. `action` is `&'static str` because both call sites
+/// pass a literal and nothing else ever should.
+///
+/// This is the same `base.join(...)` construction the other two endpoints
+/// use, deliberately: one way to build a URL in this module, not two.
+fn action_url(
+    base: &Url,
+    pms_booking_id: &str,
+    action: &'static str,
+) -> Result<Url, PmsActionUrlError> {
     let id = validate_pms_booking_id(pms_booking_id)?;
-    let mut url = base.clone();
-    {
-        let mut segments = url
-            .path_segments_mut()
-            .map_err(|()| PmsActionUrlError::BaseNotHierarchical)?;
-        // The base path is normalised to end in `/`, which leaves a
-        // trailing empty segment; dropping it is what keeps the result
-        // `/api/...` rather than `//api/...`.
-        segments
-            .pop_if_empty()
-            .extend(["api", "channel", "bookings", id, action]);
-    }
-    Ok(url)
+    let segment = utf8_percent_encode(id, PMS_PATH_SEGMENT);
+    // Relative — no leading slash — so a base carrying a path prefix keeps
+    // it. `validate_pms_base_url` normalised the base to end in `/`, which
+    // is what makes the join an append rather than a replace.
+    let relative = format!("api/channel/bookings/{segment}/{action}");
+    base.join(&relative)
+        .map_err(|_| PmsActionUrlError::Malformed)
 }
 
 /// The header `new-hotel` reads the idempotency key from (its #305).
@@ -1108,7 +1125,7 @@ impl PmsChannelClient {
     async fn post_action(
         &self,
         pms_booking_id: &str,
-        action: &str,
+        action: &'static str,
         body: Option<serde_json::Value>,
     ) -> Result<(), PmsActionError> {
         // Validate *before* anything is formatted: a booking id that is not a
@@ -1928,14 +1945,15 @@ mod tests {
     }
 
     /// Belt and braces on the encoder: even if the allow-list were ever
-    /// loosened, a segment cannot grow into a path, an authority or a
-    /// query, because `path_segments_mut` percent-encodes what it is given.
+    /// loosened, an id cannot grow into a path, an authority, a query or a
+    /// fragment, because it is percent-encoded before the relative path is
+    /// assembled and joined.
     ///
-    /// Asserted against the *encoder* rather than through `action_url`,
-    /// which refuses all of these before they get there — the point is that
-    /// the second line of defence is real and not just a comment.
+    /// Asserted against the encode-then-join step rather than through
+    /// `action_url`, which refuses all of these before they get there — the
+    /// point is that the second line of defence is real and not a comment.
     #[test]
-    fn a_pushed_segment_can_never_add_a_path_element() {
+    fn an_encoded_id_can_never_add_a_path_element() {
         for hostile in [
             "../../admin/keys",
             "//evil.example.com",
@@ -1943,11 +1961,10 @@ mod tests {
             "x#frag",
             "x/y",
         ] {
-            let mut url = base();
-            url.path_segments_mut()
-                .unwrap()
-                .pop_if_empty()
-                .extend(["api", "channel", "bookings", hostile, "release"]);
+            let segment = utf8_percent_encode(hostile, PMS_PATH_SEGMENT);
+            let url = base()
+                .join(&format!("api/channel/bookings/{segment}/release"))
+                .expect("an encoded segment always resolves");
             assert_eq!(
                 url.host_str(),
                 Some("pms.example.com"),
@@ -1964,6 +1981,11 @@ mod tests {
             assert!(
                 url.query().is_none() && url.fragment().is_none(),
                 "{hostile:?} must not open a query or fragment: {url}"
+            );
+            assert_eq!(
+                url.path_segments().unwrap().count(),
+                5,
+                "{hostile:?} must stay one segment: {url}"
             );
         }
     }
