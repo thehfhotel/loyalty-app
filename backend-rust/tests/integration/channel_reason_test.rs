@@ -288,8 +288,17 @@ async fn a_422_with_no_reason_is_still_read_as_a_reused_key() {
     assert_eq!(body["message"], IDEMPOTENCY_KEY_REUSED_MESSAGE);
 }
 
-/// A reason this build has never heard of must not become a 500: it falls
-/// through to the mapping that predates A19.
+/// A reason this build has never heard of must not become a 500, and must
+/// not be re-emitted raw: it falls through to the mapping that predates
+/// A19, whatever that mapping happens to say.
+///
+/// For a 409 on the create path that mapping is `BadRequest` — `parse_json`
+/// has always turned every 4xx outside `NOT_THE_CALLERS_FAULT` into "the
+/// guest's to fix", and 409 is one of them. **400 here is the assertion,
+/// not a bug**: a build that has not learned the new token behaves exactly
+/// as the build before it did, which is the whole point of the fallback.
+/// The 409 answers in this file are the *recognised* reasons, and they get
+/// there through [`PmsReason::is_definitive`], not through the status.
 #[tokio::test]
 async fn an_unknown_reason_falls_back_to_the_pre_a19_mapping() {
     let (status, body, _pms) = create_against(
@@ -298,10 +307,13 @@ async fn an_unknown_reason_falls_back_to_the_pre_a19_mapping() {
     )
     .await;
 
-    assert_eq!(status, 409, "409 was a conflict before A19 and still is");
+    assert_eq!(
+        status, 400,
+        "an unrecognised 409 maps exactly as it did before A19"
+    );
     assert!(
         body.get("reason").is_none(),
-        "an unrecognised token is not re-emitted: {body}"
+        "an unrecognised token is not re-emitted as a structured reason: {body}"
     );
 }
 
