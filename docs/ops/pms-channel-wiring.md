@@ -1,8 +1,11 @@
 # Switching on the loyalty → PMS booking channel
 
 **Status: the channel is DARK, on both sides, and this document is how it gets
-switched on.** Nothing here has been done. No repository variable or secret has
-been set, and running through it is an owner decision, not a deploy step.
+switched on.** The deploy plumbing is complete in BOTH repos — new-hotel's
+landed with board items B3 (#296) and B3c (#298), loyalty-app's with B4b — so
+nothing below is a code change. What is missing is the values: no token has been
+minted, no repository variable or secret has been set. Running through this is
+an owner decision, not a deploy step.
 
 What the channel is: the loyalty app is a first-party booking channel into the
 PMS (ADR-0003). With it on, a guest booking on `loyalty.saichon.com` gets live
@@ -27,7 +30,30 @@ Both are sent as `Authorization: Bearer <token>`. The sender holds it, the
 receiver verifies it, and the two names for token A differ because each repo
 names the variable after *the other side*.
 
-Source of truth for the new-hotel half: `new-hotel/docs/loyalty-channel.md`.
+**Both repos are already plumbed for all four keys** — this PR closed the last
+gap, which was on the loyalty side. On new-hotel the wiring landed with board
+items B3 (#296) and B3c (#298) and was verified live on 2026-09-10, so every
+step below is a *value* change plus a redeploy, never a code change. The
+new-hotel half rides a different mechanism from this repo's and it is worth
+knowing which, because it changes what "unset" looks like:
+
+| key | repo | kind | how it reaches the container |
+|---|---|---|---|
+| `PMS_BASE_URL` | loyalty-app | repo **variable** | deploy jq → `.env` → compose `environment:` |
+| `PMS_CHANNEL_TOKEN` | loyalty-app | repo **secret** | deploy jq → `.env` → compose `environment:` |
+| `LOYALTY_SERVICE_TOKEN` | loyalty-app | repo **secret** | deploy jq → `.env` → compose `environment:` |
+| `LOYALTY_CHANNEL_TOKEN` | new-hotel | repo **secret** | payload `.secrets.loyalty_channel_token` → `/home/deploy/secrets/…` → `/run/secrets/…` (**file**, no `environment:` entry) |
+| `LOYALTY_SERVICE_TOKEN` | new-hotel | repo **secret** | payload `.secrets.loyalty_service_token` → same file path |
+| `LOYALTY_APP_URL` | new-hotel | repo **variable** | workflow → `.env` → compose `${LOYALTY_APP_URL:-}` |
+| `LOYALTY_CHANNEL_ENABLED` | new-hotel | **compose-owned flag** | committed `docker-compose.yml` default only — *not* a repo variable |
+
+On the new-hotel side an unset GitHub secret produces an **empty file**, not a
+missing one, and the hydrator reads an empty file as absent — which is why
+mounting those secrets opened nothing. `env` wins over the file if both are
+present, which is a local-dev affordance only.
+
+Source of truth for the new-hotel half: `new-hotel/docs/loyalty-channel.md` →
+"Provisioning (deploy plumbing)".
 
 ---
 
@@ -140,7 +166,26 @@ unset TOKEN_B
 
 A **different** value from token A. Same variable name on both sides this time.
 
-### 3. The base URL
+Note the asymmetry: on **loyalty-app** this token arrives as an environment
+variable, on **new-hotel** as a mounted secret file. Same string either way.
+
+### 3. The loyalty app's URL, on new-hotel
+
+Token B on its own does nothing. The PMS builds its stay-hook client only when
+it has **both** the token and a base URL to send to — with either missing,
+`LoyaltyClient::from_config` yields `None` and no stay ever accrues points (the
+checkout itself is unaffected, which is why this can go wrong quietly):
+
+```bash
+gh variable set LOYALTY_APP_URL --repo thehfhotel/new-hotel \
+  --body 'https://loyalty.saichon.com'
+```
+
+Check whether it is already set before writing it — `gh variable list --repo
+thehfhotel/new-hotel`. An unset variable is a no-op (its workflow fallback and
+its compose default are the same literal), so a blank here is safe, just inert.
+
+### 4. The base URL
 
 ```bash
 gh variable set PMS_BASE_URL --repo thehfhotel/loyalty-app \
@@ -151,21 +196,49 @@ A **variable**, not a secret, on purpose: it is not a credential, it is the one
 value worth reading back in the UI to see where the channel points, and blanking
 it is the rollback.
 
-### 4. Deploy loyalty-app
+### 5. Deploy both repos
+
+Neither secret reaches a container until its repo deploys. loyalty-app:
 
 ```bash
 gh workflow run deploy.yml --repo thehfhotel/loyalty-app --ref main
 gh run watch --repo thehfhotel/loyalty-app
 ```
 
-### 5. Switch the PMS side on
+new-hotel deploys on a push to `master`, so its go-live is whatever the next
+push is — or run its ship skill (`/ship`) to trigger one deliberately. Until
+that deploy runs, `/home/deploy/secrets/loyalty_channel_token` is still the
+empty file it has been since #296, and the PMS will answer `401` to a loyalty
+app that now holds a token.
 
-The loyalty app is now *able* to call the PMS, but the PMS still answers `503
-channel_disabled` to everyone. Flipping `LOYALTY_CHANNEL_ENABLED=true` on
-new-hotel is the **last** step and the only one guests can see — do it with
-reception aware, per `new-hotel/docs/loyalty-channel.md`, and note that
-new-hotel's own deploy does not yet pass these variables through either (its
-go-live checklist covers that side).
+Order does not matter, because the channel is still closed at the PMS end by the
+flag. Both directions stay dark until step 6.
+
+### 6. Flip the flag — a separate, later decision (B10/B11)
+
+Everything above is provisioning; this is the go-live, and it is the only step
+guests can see. The loyalty app can now reach the PMS and authenticate, but the
+PMS still answers `503 channel_disabled` to everyone, including a perfectly
+valid token.
+
+`LOYALTY_CHANNEL_ENABLED` is **not** a repository variable and `gh variable set`
+will not move it. It is compose-owned under new-hotel's ADR 0004, because it
+guards a legacy write — a channel hold lands in the shared legacy DB as a normal
+`จอง` the moment it is created (coexistence invariant #6). Its state is the
+committed default in new-hotel's `docker-compose.yml`:
+
+```yaml
+- LOYALTY_CHANNEL_ENABLED=${LOYALTY_CHANNEL_ENABLED:-false}
+```
+
+so the flip is a one-line reviewable diff that `git log -S
+LOYALTY_CHANNEL_ENABLED` can date, and new-hotel's `lint-deploy-flag-ownership`
+CI job fails the build if anyone tries to route it through a repo variable
+instead. Do it with reception aware, per `new-hotel/docs/loyalty-channel.md`.
+
+This is tracked separately on the program board (**B10 / B11**) and is out of
+scope for the wiring above — provisioning the tokens does not commit anyone to
+flipping it.
 
 ---
 
@@ -201,7 +274,7 @@ ssh evergreen 'curl -s -o - -w "\n%{http_code}\n" \
 
 | You get | It means |
 |---|---|
-| `503` + `{"reason":"channel_disabled"}` | **Correct**, before step 5. The request reached the PMS channel router and the PMS's own flag turned it away. |
+| `503` + `{"reason":"channel_disabled"}` | **Correct**, before step 6. The request reached the PMS channel router and the PMS's own flag turned it away. |
 | `401` | The route works and the flag is already on, but the token is wrong — token A does not match on the two sides. |
 | `404` + HTML | The request landed on the Next.js app, not the channel router. The proxy rewrite is gone. |
 | connection refused / timeout | No route. Check `extra_hosts` survived the deploy: `docker inspect loyalty_backend_production --format '{{.HostConfig.ExtraHosts}}'`. |
@@ -210,7 +283,7 @@ Note the `503` is returned **before** the token is checked (new-hotel's
 `check_channel_access` gates on the flag first), which is what makes this a safe
 check to run with no credentials at all.
 
-### c. End to end, after step 5
+### c. End to end, after step 6
 
 Book a test stay through `loyalty.saichon.com` and confirm the hold appears in
 the PMS. Coordinate with reception first — this creates a real hold on a real
@@ -243,8 +316,8 @@ cheapest way to re-arm: set the variable again, redeploy.
 
 ## What this document does not cover
 
-* Passing `LOYALTY_CHANNEL_TOKEN` / `LOYALTY_CHANNEL_ENABLED` into the new-hotel
-  container. That repo's deploy does not plumb them yet either; its
-  `docs/loyalty-channel.md` owns that half.
+* The go-live decision itself (step 6 / board items **B10 / B11**) and the
+  reception coordination around it. The plumbing is complete on both sides; what
+  remains is a judgement call, not a wiring gap.
 * Issuing a Cloudflare Access service token, which would only be needed if the
   channel ever had to run over the public hostname.
