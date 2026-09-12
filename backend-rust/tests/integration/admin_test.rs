@@ -38,6 +38,31 @@ async fn create_regular_user(pool: &sqlx::PgPool) -> TestUser {
     user
 }
 
+/// Seed one `line_friendships` row directly (D2b `lineFollowers` stats),
+/// with an explicit `followed_at` so tests can exercise the 7/30-day
+/// follow-recency windows rather than relying on `NOW()`.
+async fn seed_line_friendship(
+    pool: &sqlx::PgPool,
+    line_user_id: &str,
+    property: &str,
+    is_friend: bool,
+    followed_at: chrono::DateTime<chrono::Utc>,
+) {
+    sqlx::query(
+        r#"
+        INSERT INTO line_friendships (line_user_id, property, is_friend, followed_at, updated_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        "#,
+    )
+    .bind(line_user_id)
+    .bind(property)
+    .bind(is_friend)
+    .bind(followed_at)
+    .execute(pool)
+    .await
+    .expect("Failed to seed line_friendships row");
+}
+
 // ============================================================================
 // List Users Tests
 // ============================================================================
@@ -483,6 +508,180 @@ async fn test_get_stats_non_admin_fails() {
 
     // Assert - Should be forbidden
     response.assert_status(403);
+
+    app.cleanup().await.ok();
+}
+
+/// Test that `lineFollowers` is present and all-zero on an empty
+/// `line_friendships` table.
+/// GET /api/admin/stats (D2b)
+#[tokio::test]
+async fn test_get_stats_line_followers_empty() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = create_admin_user(app.db()).await;
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+
+    let response = client.get("/api/admin/stats").await;
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("Response should be valid JSON");
+    let line_followers = body
+        .get("data")
+        .and_then(|d| d.get("lineFollowers"))
+        .expect("Stats should include lineFollowers");
+
+    let total = line_followers
+        .get("total")
+        .expect("lineFollowers should include total");
+    assert_eq!(total.get("currentFriends"), Some(&json!(0)));
+    assert_eq!(total.get("unfollowed"), Some(&json!(0)));
+    assert_eq!(total.get("followedLast7Days"), Some(&json!(0)));
+    assert_eq!(total.get("followedLast30Days"), Some(&json!(0)));
+
+    let by_property = line_followers
+        .get("byProperty")
+        .and_then(|v| v.as_array())
+        .expect("lineFollowers.byProperty should be an array");
+    assert_eq!(
+        by_property.len(),
+        2,
+        "hf and hfville should both be reported even with no line_friendships rows"
+    );
+    for entry in by_property {
+        assert_eq!(entry.get("currentFriends"), Some(&json!(0)));
+        assert_eq!(entry.get("unfollowed"), Some(&json!(0)));
+        assert_eq!(entry.get("followedLast7Days"), Some(&json!(0)));
+        assert_eq!(entry.get("followedLast30Days"), Some(&json!(0)));
+    }
+
+    app.cleanup().await.ok();
+}
+
+/// Test that `lineFollowers` aggregates `line_friendships` per property
+/// (current friends vs. unfollowed, plus the 7/30-day follow-recency
+/// windows) and totals correctly across properties.
+/// GET /api/admin/stats (D2b)
+#[tokio::test]
+async fn test_get_stats_line_followers_counts_per_property() {
+    let app = TestApp::new().await.expect("Failed to create test app");
+
+    let admin = create_admin_user(app.db()).await;
+
+    let now = chrono::Utc::now();
+    let recent = now - chrono::Duration::hours(1);
+    let within_30_days = now - chrono::Duration::days(10);
+    let over_30_days_ago = now - chrono::Duration::days(40);
+
+    // hf: two friendships — one still following (followed an hour ago) and
+    // one that unfollowed a while back (followed 40 days ago, well outside
+    // either window).
+    seed_line_friendship(app.db(), "Ufollower-hf-current", "hf", true, recent).await;
+    seed_line_friendship(
+        app.db(),
+        "Ufollower-hf-unfollowed",
+        "hf",
+        false,
+        over_30_days_ago,
+    )
+    .await;
+    // hfville: one friendship, followed 10 days ago — inside the 30-day
+    // window but outside the 7-day one.
+    seed_line_friendship(
+        app.db(),
+        "Ufollower-hfville-current",
+        "hfville",
+        true,
+        within_30_days,
+    )
+    .await;
+
+    let client = app.authenticated_client_with_role(&admin.id, &admin.email, "admin");
+    let response = client.get("/api/admin/stats").await;
+    response.assert_status(200);
+
+    let body: Value = response.json().expect("Response should be valid JSON");
+    let line_followers = body
+        .get("data")
+        .and_then(|d| d.get("lineFollowers"))
+        .expect("Stats should include lineFollowers");
+
+    let by_property: std::collections::HashMap<String, Value> = line_followers
+        .get("byProperty")
+        .and_then(|v| v.as_array())
+        .expect("lineFollowers.byProperty should be an array")
+        .iter()
+        .map(|entry| {
+            let property = entry
+                .get("property")
+                .and_then(|p| p.as_str())
+                .expect("byProperty entries should have a property")
+                .to_string();
+            (property, entry.clone())
+        })
+        .collect();
+
+    let hf = by_property.get("hf").expect("hf should be reported");
+    assert_eq!(
+        hf.get("currentFriends"),
+        Some(&json!(1)),
+        "hf currentFriends"
+    );
+    assert_eq!(hf.get("unfollowed"), Some(&json!(1)), "hf unfollowed");
+    assert_eq!(
+        hf.get("followedLast7Days"),
+        Some(&json!(1)),
+        "hf followedLast7Days"
+    );
+    assert_eq!(
+        hf.get("followedLast30Days"),
+        Some(&json!(1)),
+        "hf followedLast30Days"
+    );
+
+    let hfville = by_property
+        .get("hfville")
+        .expect("hfville should be reported");
+    assert_eq!(
+        hfville.get("currentFriends"),
+        Some(&json!(1)),
+        "hfville currentFriends"
+    );
+    assert_eq!(
+        hfville.get("unfollowed"),
+        Some(&json!(0)),
+        "hfville unfollowed"
+    );
+    assert_eq!(
+        hfville.get("followedLast7Days"),
+        Some(&json!(0)),
+        "hfville followedLast7Days"
+    );
+    assert_eq!(
+        hfville.get("followedLast30Days"),
+        Some(&json!(1)),
+        "hfville followedLast30Days"
+    );
+
+    let total = line_followers
+        .get("total")
+        .expect("lineFollowers should include total");
+    assert_eq!(
+        total.get("currentFriends"),
+        Some(&json!(2)),
+        "total currentFriends"
+    );
+    assert_eq!(total.get("unfollowed"), Some(&json!(1)), "total unfollowed");
+    assert_eq!(
+        total.get("followedLast7Days"),
+        Some(&json!(1)),
+        "total followedLast7Days"
+    );
+    assert_eq!(
+        total.get("followedLast30Days"),
+        Some(&json!(2)),
+        "total followedLast30Days"
+    );
 
     app.cleanup().await.ok();
 }
