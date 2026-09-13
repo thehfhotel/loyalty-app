@@ -182,10 +182,13 @@ compared — so guessing the token costs the guesser their budget, which is the
 only path worth bounding. Over budget is a `429` with a truthful `Retry-After`.
 
 Fail-**open**: if Redis cannot be reached the request is allowed and a warning
-is logged. A Redis blip must not take the weekly pack — or the admin dashboard,
-which shares the bucket on `/api/admin/stats` — down. The credential, not the
-budget, is what keeps this path closed. (Contrast the public deposit-link
-routes, which fail *closed*, because those have no credential at all.)
+is logged. A Redis blip must not take the weekly pack down — nor the one of
+these three routes an admin actually opens in a browser, `/api/analytics/deposit-funnel`,
+which the admin Analytics page reads and which therefore shares the bucket.
+(`/api/admin/stats` and the agreement report have no frontend caller.) The
+credential, not the budget, is what keeps this path closed. (Contrast the public
+deposit-link routes, which fail *closed*, because those have no credential at
+all.)
 
 ---
 

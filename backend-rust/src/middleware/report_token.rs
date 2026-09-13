@@ -62,7 +62,8 @@
 //!
 //! A bearer that does not match is passed through **untouched** rather
 //! than refused — an admin JWT arrives in exactly the same header, and
-//! refusing here would break the admin dashboard.
+//! refusing here would break the admin Analytics page, which reads
+//! `/api/analytics/deposit-funnel` with exactly such a JWT.
 //!
 //! ## Why `user_audit_log` and not `booking_audit_log`
 //!
@@ -104,10 +105,13 @@ pub const REPORT_TOKEN_ACTION: &str = "report_token_read";
 /// reaches one of the three routes carrying a bearer while the feature is
 /// configured.
 ///
-/// Generous on purpose: the weekly pack makes three calls, and the same
-/// bucket is shared with admins reading `/api/admin/stats` from the
-/// dashboard. It exists to bound *guessing*, not to ration reporting. The
-/// global production limiter (100/min) still sits above it.
+/// Generous on purpose: the weekly pack makes three calls, and the bucket
+/// is shared with any admin reading the same route from a browser — of the
+/// three, only `/api/analytics/deposit-funnel` has a frontend caller
+/// (`analyticsService.ts`, the admin Analytics page); `/api/admin/stats`
+/// and the agreement report have none. It exists to bound *guessing*, not
+/// to ration reporting. The global production limiter (100/min) still sits
+/// above it.
 const REPORT_READ_BUDGET_PER_MINUTE: u32 = 60;
 
 /// Window for [`REPORT_READ_BUDGET_PER_MINUTE`], in seconds.
@@ -189,8 +193,9 @@ impl ReportReadGuard {
             expected: config.report_read.token.as_deref().map(Arc::from),
             route,
             // Fail-OPEN (the default): a Redis blip must not take the
-            // weekly pack or the admin dashboard down. The credential,
-            // not the budget, is what keeps this path closed.
+            // weekly pack down, nor the admin Analytics page that reads
+            // the funnel through the same bucket. The credential, not the
+            // budget, is what keeps this path closed.
             limiter: RedisRateLimiter::new(
                 state.redis(),
                 RateLimitConfig::new(
@@ -222,11 +227,26 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// The bearer token on a request, if it carries one.
+///
+/// The scheme is matched **case-insensitively**, like
+/// [`crate::middleware::auth`]'s `extract_bearer_token`. RFC 7235 says the
+/// scheme is case-insensitive, and more to the point the two parsers sit
+/// on the same header on the same routes: if this one were stricter, a
+/// client sending `bearer <token>` would be refused here, fall through to
+/// `optional_auth_middleware` — which accepts that spelling — and get a
+/// 401 from `ReportAccess` while its credential was perfectly good. A
+/// disagreement between two parsers of one header is a bug waiting for
+/// the first client that lowercases.
 fn bearer(headers: &axum::http::HeaderMap) -> Option<&str> {
+    const SCHEME: &str = "Bearer ";
+
     headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
+        .and_then(|value| {
+            let (scheme, token) = value.split_at_checked(SCHEME.len())?;
+            scheme.eq_ignore_ascii_case(SCHEME).then_some(token)
+        })
         .map(str::trim)
         .filter(|token| !token.is_empty())
 }
@@ -389,11 +409,45 @@ where
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // The capability marker wins: it can only have been inserted by
-        // `report_read_middleware`, which can only be reached on a route
-        // that mounted it.
-        if let Some(principal) = parts.extensions.get::<ReportPrincipal>() {
-            return Ok(ReportAccess::ReportToken(principal.route));
+        // The capability marker wins — but only on the route it names.
+        //
+        // The marker can only be inserted by `report_read_middleware`, and
+        // today that is mounted on exactly three routes. "Today" is the
+        // weak word: a future edit that attaches a guard to a fourth route,
+        // or attaches the wrong `ReportRoute` to one of these three, would
+        // silently open that route to the token AND file the read under a
+        // path it did not happen on — a wrong audit trail, which is worse
+        // than none. So the declared route is checked against the route
+        // axum actually matched.
+        //
+        // `MatchedPath` and not `parts.uri.path()`: `Router::nest` strips
+        // the prefix from the URI the inner router sees, so under
+        // `/api/admin` the path here reads `/stats`, while `MatchedPath`
+        // carries the full `/api/admin/stats` — which is exactly what
+        // `ReportRoute::as_str` returns and what the audit row records.
+        //
+        // A mismatch DROPS the principal rather than refusing outright:
+        // the route falls back to admin-JWT-only, which is the state it
+        // had before this feature existed and the safe one to fail into.
+        // The report caller then gets the 401 it should have got, and the
+        // ERROR below is how a human finds out.
+        if let Some(principal) = parts.extensions.get::<ReportPrincipal>().copied() {
+            let matched = parts
+                .extensions
+                .get::<axum::extract::MatchedPath>()
+                .map(axum::extract::MatchedPath::as_str);
+
+            if matched == Some(principal.route.as_str()) {
+                return Ok(ReportAccess::ReportToken(principal.route));
+            }
+
+            tracing::error!(
+                declared = principal.route.as_str(),
+                matched = ?matched,
+                "Report principal reached a route it was not minted for — \
+                 report_read_middleware is mis-mounted. Refusing the token \
+                 on this route."
+            );
         }
 
         match parts.extensions.get::<AuthUser>() {
@@ -459,6 +513,40 @@ mod tests {
         assert_eq!(bearer(&headers), None);
     }
 
+    /// The scheme is case-insensitive, exactly like
+    /// `middleware::auth::extract_bearer_token`.
+    ///
+    /// Two parsers reading one header on one route must agree. If this one
+    /// were stricter, `bearer <token>` would be dropped here, fall through
+    /// to `optional_auth_middleware` — which accepts that spelling — and
+    /// earn a 401 from `ReportAccess` while the credential was correct.
+    #[test]
+    fn bearer_matches_the_scheme_case_insensitively() {
+        let header = |v: &str| {
+            let mut h = HeaderMap::new();
+            h.insert(AUTHORIZATION, v.parse().unwrap());
+            h
+        };
+
+        for spelling in ["Bearer tok", "bearer tok", "BEARER tok", "BeArEr tok"] {
+            assert_eq!(
+                bearer(&header(spelling)),
+                Some("tok"),
+                "scheme must be case-insensitive: {spelling}"
+            );
+        }
+
+        // Case-insensitive on the SCHEME only — a different scheme, and a
+        // token that merely starts with the letters, are still not ours.
+        assert_eq!(bearer(&header("Basic tok")), None);
+        assert_eq!(bearer(&header("Bearertok")), None);
+        // Too short to carry the scheme at all.
+        assert_eq!(bearer(&header("Bear")), None);
+        // A multi-byte character straddling the scheme boundary must not
+        // panic — `split_at_checked` returns None on a non-char boundary.
+        assert_eq!(bearer(&header("Bearerรtok")), None);
+    }
+
     #[test]
     fn route_strings_are_the_mounted_paths() {
         // These literals are what `docs/ops/weekly-pack-access.md` tells
@@ -472,6 +560,94 @@ mod tests {
         assert_eq!(
             ReportRoute::SlipAgreementReport.as_str(),
             "/api/admin/slips/agreement-report"
+        );
+    }
+
+    /// Build a one-route app whose layer stamps `stamped` into the
+    /// request, mount it under `nest_at`, and report the status a
+    /// `ReportAccess` handler answers with.
+    ///
+    /// The principal is inserted directly rather than through
+    /// `report_read_middleware`, which needs Redis and a pool — the thing
+    /// under test is what `ReportAccess` does with a principal once one
+    /// exists, not how it got there.
+    async fn status_for_stamped_principal(nest_at: &str, route: &str, stamped: ReportRoute) -> u16 {
+        use axum::{routing::get, Router};
+        use tower::ServiceExt;
+
+        async fn handler(_access: ReportAccess) -> &'static str {
+            "ok"
+        }
+
+        let inner =
+            Router::new()
+                .route(route, get(handler))
+                .route_layer(axum::middleware::from_fn(
+                    move |mut request: Request, next: Next| async move {
+                        request
+                            .extensions_mut()
+                            .insert(ReportPrincipal { route: stamped });
+                        next.run(request).await
+                    },
+                ));
+
+        let app: Router = Router::new().nest(nest_at, inner);
+        let uri = format!("{nest_at}{route}");
+
+        app.oneshot(
+            axum::http::Request::builder()
+                .uri(&uri)
+                .body(axum::body::Body::empty())
+                .expect("build request"),
+        )
+        .await
+        .expect("router responds")
+        .status()
+        .as_u16()
+    }
+
+    /// A principal minted for the route it is actually on is accepted.
+    ///
+    /// This also pins the `MatchedPath` assumption the mis-mount guard
+    /// rests on: `nest` strips the prefix from `uri.path()` (it reads
+    /// `/stats` inside), while `MatchedPath` carries the full
+    /// `/api/admin/stats` that `ReportRoute::as_str` returns. If axum ever
+    /// changed that, this test goes red rather than the guard silently
+    /// refusing every report read.
+    #[tokio::test]
+    async fn a_principal_on_its_own_route_is_accepted() {
+        assert_eq!(
+            status_for_stamped_principal("/api/admin", "/stats", ReportRoute::AdminStats).await,
+            200
+        );
+    }
+
+    /// A principal minted for a DIFFERENT route is dropped, and the route
+    /// falls back to admin-JWT-only — which, with no `AuthUser` here, is a
+    /// 401.
+    ///
+    /// This is the standing guard against a future mis-mount: attaching a
+    /// guard to a fourth route, or the wrong `ReportRoute` to one of the
+    /// three, must not open that route to the token and must not file the
+    /// read under a path it did not happen on.
+    #[tokio::test]
+    async fn a_principal_from_another_route_is_refused() {
+        assert_eq!(
+            status_for_stamped_principal("/api/admin", "/stats", ReportRoute::DepositFunnel).await,
+            401,
+            "a principal minted for the funnel must not open /api/admin/stats"
+        );
+
+        // The inverse, so the test cannot pass by one route being special.
+        assert_eq!(
+            status_for_stamped_principal(
+                "/api/analytics",
+                "/deposit-funnel",
+                ReportRoute::AdminStats
+            )
+            .await,
+            401,
+            "a principal minted for stats must not open the funnel"
         );
     }
 

@@ -38,14 +38,37 @@ const REPORT_ROUTES: [&str; 3] = [
 
 /// A representative slice of the admin surface the token must NOT open.
 ///
-/// Deliberately mixed: a list, a detail, a settings read and the *other*
-/// analytics endpoints that sit in the same routers as the three above —
-/// the neighbours a mis-scoped layer would take with it.
-const FORBIDDEN_ROUTES: [&str; 6] = [
+/// Deliberately mixed, and deliberately weighted towards the **nearest
+/// neighbours** — the routes a mis-scoped layer would take with it:
+///
+/// * the other endpoints in the two routers the three opened routes live
+///   in (`/api/admin/*`, `/api/analytics/*`);
+/// * `/api/admin/slips/...`'s actual sibling, `/api/admin/bookings/slips/:id`,
+///   which is the one path that could plausibly be caught by a sloppy
+///   prefix match against `slips`;
+/// * every other module merged into the admin router — rooms, bookings,
+///   deposit links, the LINE push budget — since each is merged the same
+///   way the agreement report used to be;
+/// * the two **PDPA** routes, which matter most of all: `/privacy/requests`
+///   lists data-subject requests and `/privacy/requests/:id/export` is the
+///   s.30 access export, i.e. the single most sensitive personal-data read
+///   in the codebase. A reporting credential reaching that would be far
+///   worse than the `psql` session this replaces.
+///
+/// The `:id` segments carry a syntactically valid UUID so the path matches
+/// its route pattern and the refusal comes from `auth_middleware` rather
+/// than from a 404 — a 404 would pass this test for the wrong reason.
+const FORBIDDEN_ROUTES: [&str; 12] = [
     "/api/admin/users",
     "/api/admin/analytics",
     "/api/admin/new-member-coupon-settings",
     "/api/admin/deposit-links",
+    "/api/admin/bookings",
+    "/api/admin/bookings/slips/00000000-0000-4000-8000-000000000001",
+    "/api/admin/rooms",
+    "/api/admin/line/push-budget",
+    "/api/admin/privacy/requests",
+    "/api/admin/privacy/requests/00000000-0000-4000-8000-000000000001/export",
     "/api/analytics/dashboard",
     "/api/analytics/user-engagement",
 ];
