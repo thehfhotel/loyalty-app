@@ -28,6 +28,14 @@ The following GitHub Actions secrets are expected to be configured under
 
 > Translation services are currently disabled. Azure translator secrets are not required unless that feature is re-enabled.
 
+**Optional secrets** — every one of these is a feature that stays **off** until
+somebody sets it, and the deploy's jq payload merges them non-empty-only, so an
+unset one ships no key at all:
+
+| Secret Name             | Feature it switches on                                    |
+| ----------------------- | --------------------------------------------------------- |
+| `REPORT_READ_TOKEN`     | Read-only access to three reporting GETs for the weekly measurement pack (D14b). Not an admin login — see [`ops/weekly-pack-access.md`](ops/weekly-pack-access.md) |
+
 ### Backup secrets — none in GitHub, but evergreen holds a live PAT
 
 Postgres backups **no longer run in GitHub Actions**, so there is still nothing

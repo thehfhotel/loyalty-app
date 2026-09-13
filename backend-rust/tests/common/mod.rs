@@ -949,6 +949,13 @@ fn create_test_config() -> loyalty_backend::Settings {
         loyalty_service: LoyaltyServiceConfig {
             token: Some(TEST_LOYALTY_SERVICE_TOKEN.to_string()),
         },
+        // OFF by default, and that is load-bearing for the rest of the
+        // suite: with no token the report-read layer is a pure
+        // pass-through — it reads no header, charges no budget and writes
+        // no audit row — so every existing admin test behaves exactly as
+        // it did. `report_token_test` opts in via
+        // `TestApp::new_with_config`.
+        report_read: ReportReadConfig::default(),
         // Feature off by default; tests opt in via TestApp::new_with_config.
         admin_bootstrap: AdminBootstrapConfig::default(),
         // No property mailbox: the booking notification is off unless a test
@@ -963,6 +970,13 @@ fn create_test_config() -> loyalty_backend::Settings {
 
 /// Service token used by machine-to-machine tests (PMS stay accrual).
 pub const TEST_LOYALTY_SERVICE_TOKEN: &str = "test-loyalty-service-token";
+
+/// Read-only reporting credential used by `report_token_test` (D14b).
+///
+/// Deliberately NOT in `create_test_config` — a test that wants it sets it
+/// on its own copy through `TestApp::new_with_config`, so the feature is
+/// off for every other test in the suite.
+pub const TEST_REPORT_READ_TOKEN: &str = "test-report-read-token-0123456789abcdef";
 
 // ============================================================================
 // Legacy Setup Functions (backward-compatible, now with per-test DB isolation)

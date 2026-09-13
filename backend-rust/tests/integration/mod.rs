@@ -24,6 +24,7 @@
 //! - `oauth_test` - OAuth authentication tests (/api/oauth/*)
 //! - `privacy_requests_test` - F3: PDPA rights requests (/api/privacy, /api/admin/privacy)
 //! - `push_budget_test` - C5: the LINE OA free-plan push budget guard
+//! - `report_token_test` - D14b: the read-only `REPORT_READ_TOKEN` principal
 //! - `slip_agreement_report_test` - A9: the shadow-window agreement report
 //! - `slipok_auto_verify_test` - Automatic SlipOK slip verification
 //! - `slipok_degrade_test` - A4: degrade to manual on a SlipOK outage/quota
@@ -65,6 +66,7 @@ pub mod notification_test;
 pub mod oauth_test;
 pub mod privacy_requests_test;
 pub mod push_budget_test;
+pub mod report_token_test;
 pub mod slip_agreement_report_test;
 pub mod slip_retention_test;
 pub mod slipok_auto_verify_test;

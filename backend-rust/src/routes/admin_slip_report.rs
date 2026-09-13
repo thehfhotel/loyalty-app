@@ -96,7 +96,8 @@
 use std::collections::BTreeMap;
 
 use axum::{
-    extract::{Extension, Query, State},
+    extract::{Query, State},
+    middleware,
     routing::get,
     Json, Router,
 };
@@ -106,7 +107,10 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-use crate::middleware::auth::{require_admin, AuthUser};
+use crate::middleware::auth::optional_auth_middleware;
+use crate::middleware::report_token::{
+    report_read_middleware, ReportAccess, ReportReadGuard, ReportRoute,
+};
 use crate::services::slip_confirm::is_slipok_actor;
 use crate::services::slip_match::{
     SLIPOK_STATUS_MANUAL, SLIPOK_STATUS_SHADOW_PASS, SLIPOK_STATUS_UNAVAILABLE,
@@ -653,13 +657,17 @@ fn parse_property(raw: Option<&str>) -> AppResult<Option<String>> {
 ///
 /// Admin only. Answers the flip question over the given window; see the
 /// module docs for what counts as a row and what the thresholds mean.
+///
+/// "Admin" here means an admin JWT **or** the read-only `REPORT_READ_TOKEN`
+/// principal (task D14b): the weekly measurement pack reports the agreement
+/// rate every week, which is the whole reason the shadow window is being
+/// run. The handler reads nothing about its caller and writes nothing. See
+/// `docs/ops/weekly-pack-access.md`.
 async fn agreement_report(
-    Extension(user): Extension<AuthUser>,
+    _access: ReportAccess,
     State(state): State<AppState>,
     Query(query): Query<AgreementReportQuery>,
 ) -> AppResult<Json<AgreementReport>> {
-    require_admin(&user)?;
-
     let now = Utc::now();
     let (from, to, start, end) = resolve_window(&query, now)?;
     let property = parse_property(query.property.as_deref())?;
@@ -739,10 +747,24 @@ async fn agreement_report(
 // Router
 // ---------------------------------------------------------------------------
 
-/// Merged into the parent admin router, so the shared `auth_middleware`
-/// layer covers it. Mount path: `/api/admin/slips/agreement-report`.
-pub fn router() -> Router<AppState> {
-    Router::new().route("/slips/agreement-report", get(agreement_report))
+/// Merged into the parent admin router's **report-readable** half, so the
+/// shared `auth_middleware` layer deliberately does NOT cover it. Mount
+/// path: `/api/admin/slips/agreement-report`.
+///
+/// Layer order: axum runs the last-added layer first, so
+/// `report_read_middleware` sees the raw `Authorization` header and
+/// `optional_auth_middleware` (innermost) still populates `AuthUser` for a
+/// real admin JWT. A caller with neither credential falls through to
+/// [`ReportAccess`], which returns the same 401 `auth_middleware` would
+/// have. `route_layer`, so a 404 under `/api/admin` costs no Redis call.
+pub fn report_readable_router(state: &AppState) -> Router<AppState> {
+    Router::new()
+        .route("/slips/agreement-report", get(agreement_report))
+        .route_layer(middleware::from_fn(optional_auth_middleware))
+        .route_layer(middleware::from_fn_with_state(
+            ReportReadGuard::new(state, ReportRoute::SlipAgreementReport),
+            report_read_middleware,
+        ))
 }
 
 // ---------------------------------------------------------------------------

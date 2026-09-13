@@ -7,6 +7,7 @@ pub mod admin;
 pub mod auth;
 pub mod cors;
 pub mod rate_limit;
+pub mod report_token;
 
 // Re-export commonly used items for convenience
 pub use admin::{
@@ -22,4 +23,7 @@ pub use cors::cors_layer;
 pub use rate_limit::{
     default_rate_limit_layer, rate_limit_middleware, strict_rate_limit_layer, RateLimitConfig,
     RateLimiter,
+};
+pub use report_token::{
+    report_read_middleware, ReportAccess, ReportPrincipal, ReportReadGuard, ReportRoute,
 };
