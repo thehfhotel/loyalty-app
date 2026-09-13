@@ -975,6 +975,62 @@ pub struct LoyaltyServiceConfig {
     pub token: Option<String>,
 }
 
+/// Read-only reporting credential (task D14b, `docs/ops/weekly-pack-access.md`).
+///
+/// The weekly measurement pack is assembled by an agent with no admin
+/// account. Until this existed the only way it could read production
+/// numbers was superuser `psql`, which breaks the repo's own rule — go
+/// through the backend API, never the database (`CLAUDE.md`, hard rule 5).
+///
+/// `REPORT_READ_TOKEN` is a bearer credential that opens **exactly three
+/// GET endpoints** and nothing else:
+///
+/// * `GET /api/analytics/deposit-funnel`
+/// * `GET /api/admin/stats`
+/// * `GET /api/admin/slips/agreement-report`
+///
+/// It mints a synthetic principal ([`crate::middleware::report_token::ReportPrincipal`])
+/// that has no user row, no role, and no reach past those three routes:
+/// every other admin route is still behind `auth_middleware`, which sees a
+/// non-JWT bearer and answers 401. Setting it therefore widens nothing
+/// that an admin JWT did not already cover.
+///
+/// **Blank = the feature is off.** Fed by [`env_present`] for the reason
+/// spelled out on [`PmsConfig`]: every compose file passes optional
+/// settings as `${VAR:-}`, so an unset secret arrives as `Some("")`, and
+/// `Some("")` here would mean a caller who sends `Authorization: Bearer `
+/// with an empty token authenticates as the report reader. Blank means
+/// absent means the middleware passes every request straight through.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ReportReadConfig {
+    /// The expected bearer token. `None` (unset or blank) = feature off.
+    pub token: Option<String>,
+}
+
+/// Shortest `REPORT_READ_TOKEN` that is not warned about at boot.
+///
+/// Not enforced — a length check that refuses to boot would take the whole
+/// backend down over an optional feature, which is the mistake B4b (#442)
+/// was written to avoid. The boot log says so instead.
+pub const REPORT_READ_TOKEN_MIN_LEN: usize = 32;
+
+impl ReportReadConfig {
+    /// Whether the report-read path is switched on at all.
+    pub fn is_configured(&self) -> bool {
+        self.token.is_some()
+    }
+
+    /// `true` when a configured token is short enough to be guessable.
+    ///
+    /// Only ever used to shape a boot-log warning; see
+    /// [`REPORT_READ_TOKEN_MIN_LEN`].
+    pub fn is_weak(&self) -> bool {
+        self.token
+            .as_deref()
+            .is_some_and(|t| t.len() < REPORT_READ_TOKEN_MIN_LEN)
+    }
+}
+
 /// Admin bootstrap allowlist (issue #348).
 ///
 /// `ADMIN_BOOTSTRAP_EMAILS` is a comma-separated, case-insensitive list of
@@ -1295,6 +1351,11 @@ pub struct Settings {
     #[serde(default)]
     pub loyalty_service: LoyaltyServiceConfig,
 
+    /// Read-only reporting credential for the weekly pack (D14b). Off
+    /// until `REPORT_READ_TOKEN` is set.
+    #[serde(default)]
+    pub report_read: ReportReadConfig,
+
     /// Admin bootstrap allowlist (`ADMIN_BOOTSTRAP_EMAILS`, issue #348)
     #[serde(default)]
     pub admin_bootstrap: AdminBootstrapConfig,
@@ -1516,6 +1577,15 @@ impl Settings {
             // configured", so the endpoint answers with a configuration
             // error rather than comparing every caller against `""`.
             .set_override_option("loyalty_service.token", env_present("LOYALTY_SERVICE_TOKEN"))?
+            // Read-only reporting credential (D14b). `env_present` for the
+            // sharpest version of the same reason: this value is COMPARED
+            // AGAINST a caller-supplied bearer. Read literally, the
+            // `${REPORT_READ_TOKEN:-}` that compose passes on a stack
+            // where nobody set the secret would make `Bearer ` (empty
+            // token) authenticate as the report reader on three
+            // production endpoints. Blank means absent means the
+            // middleware never matches anything.
+            .set_override_option("report_read.token", env_present("REPORT_READ_TOKEN"))?
             .set_override_option(
                 "admin_bootstrap.emails",
                 env::var("ADMIN_BOOTSTRAP_EMAILS").ok(),

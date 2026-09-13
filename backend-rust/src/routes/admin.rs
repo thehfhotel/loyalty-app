@@ -4,6 +4,14 @@
 //! analytics, and notification broadcasts.
 //!
 //! All routes in this module require admin authentication (admin or super_admin role).
+//!
+//! One exception, and it is narrower than it sounds: `GET /stats` also
+//! accepts the read-only `REPORT_READ_TOKEN` principal (task D14b), because
+//! the weekly measurement pack reads `total_users` and `lineFollowers` off
+//! it. That token opens three GET endpoints estate-wide and nothing else —
+//! every other route here still answers 401 to it, which
+//! `tests/integration/report_token_test.rs` asserts. See
+//! `docs/ops/weekly-pack-access.md`.
 
 use axum::{
     extract::{Extension, Path, Query, State},
@@ -19,7 +27,12 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::error::{AppError, AppResult};
-use crate::middleware::auth::{auth_middleware, has_role, require_admin, AuthUser};
+use crate::middleware::auth::{
+    auth_middleware, has_role, optional_auth_middleware, require_admin, AuthUser,
+};
+use crate::middleware::report_token::{
+    report_read_middleware, ReportAccess, ReportReadGuard, ReportRoute,
+};
 use crate::models::notification::NotificationType;
 use crate::models::user::UserRole;
 use crate::models::user_loyalty::UserLoyaltyResponse;
@@ -822,12 +835,16 @@ async fn delete_user(
 
 /// GET /api/admin/stats
 /// Get dashboard statistics
+///
+/// Readable by an admin JWT or by the read-only `REPORT_READ_TOKEN`
+/// principal (task D14b): the weekly measurement pack takes `total_users`
+/// and `lineFollowers` from here. The handler never attributes anything to
+/// its caller and never writes, so [`ReportAccess`] carrying no identity
+/// costs it nothing. `docs/ops/weekly-pack-access.md`.
 async fn get_stats(
-    Extension(user): Extension<AuthUser>,
+    _access: ReportAccess,
     State(state): State<AppState>,
 ) -> AppResult<Json<StatsResponse>> {
-    require_admin(&user)?;
-
     // Total users
     let total_users: i64 = sqlx::query_scalar!(r#"SELECT COUNT(*) as "count!: i64" FROM users"#)
         .fetch_one(state.db())
@@ -1563,10 +1580,33 @@ impl From<UserRow> for AdminUserResponse {
 /// use loyalty_backend::state::AppState;
 ///
 /// let app = Router::new()
-///     .nest("/api", admin::router())
+///     .nest("/api", admin::router(state.clone()))
 ///     .with_state(state);
 /// ```
-pub fn router() -> Router<AppState> {
+pub fn router(state: AppState) -> Router<AppState> {
+    // The two admin routes the weekly measurement pack reads (task D14b).
+    // Each gets its own sub-router so `REPORT_READ_TOKEN` opens exactly
+    // that route and nothing that happens to sit next to it, and each is
+    // merged in AFTER the blanket `auth_middleware` layer below so that
+    // layer does not cover it.
+    //
+    // Layer order inside a sub-router: axum runs the LAST-added layer
+    // first, so `report_read_middleware` (added last) sees the raw
+    // `Authorization` header, and `optional_auth_middleware` (added first,
+    // so innermost) still populates `AuthUser` for a real admin JWT. A
+    // caller with neither credential reaches `ReportAccess`, which
+    // answers the same 401 `auth_middleware` would have.
+    let report_readable = Router::new()
+        .route("/stats", get(get_stats))
+        .route_layer(middleware::from_fn(optional_auth_middleware))
+        .route_layer(middleware::from_fn_with_state(
+            ReportReadGuard::new(&state, ReportRoute::AdminStats),
+            report_read_middleware,
+        ))
+        .merge(crate::routes::admin_slip_report::report_readable_router(
+            &state,
+        ));
+
     Router::new()
         // User management
         .route("/users", get(list_users))
@@ -1575,8 +1615,8 @@ pub fn router() -> Router<AppState> {
         .route("/users/:id", delete(delete_user))
         .route("/users/:id/status", patch(update_user_status))
         .route("/users/:id/role", patch(update_user_role))
-        // Dashboard stats
-        .route("/stats", get(get_stats))
+        // Dashboard stats live in `report_readable` above — `/stats` is one
+        // of the three routes `REPORT_READ_TOKEN` opens (D14b).
         // Analytics
         .route("/analytics", get(get_analytics))
         // Notifications
@@ -1603,7 +1643,8 @@ pub fn router() -> Router<AppState> {
         // A9: the shadow-window agreement report. Read-only and its own
         // module because it is calibration arithmetic, not slip moderation —
         // it will be deleted the day `SLIPOK_AUTO_VERIFY` is decided.
-        .merge(crate::routes::admin_slip_report::router())
+        // Its one route is report-readable and therefore lives in
+        // `report_readable` above, not here.
         // Deposit request links (B1): issue / list / revoke / reissue the
         // link reception sends a guest who booked by phone or at the desk.
         .merge(crate::routes::admin_deposit_links::router())
@@ -1618,14 +1659,18 @@ pub fn router() -> Router<AppState> {
         .merge(crate::routes::privacy::admin_router())
         // Apply auth middleware to all routes
         .layer(middleware::from_fn(auth_middleware))
+        // Merged last, so the blanket layer above does not cover the two
+        // report-readable routes. Everything merged BEFORE that `.layer`
+        // call keeps the admin-JWT-only behaviour it has always had.
+        .merge(report_readable)
 }
 
 /// Create admin routes (alias for router())
 ///
 /// All routes require admin authentication.
 /// Routes are relative since they're nested under /api/admin in the main router.
-pub fn routes() -> Router<AppState> {
-    router()
+pub fn routes(state: AppState) -> Router<AppState> {
+    router(state)
 }
 
 #[cfg(test)]

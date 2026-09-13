@@ -285,6 +285,14 @@ jobs:
           PMS_BASE_URL:          ${{ vars.PMS_BASE_URL }}
           PMS_CHANNEL_TOKEN:     ${{ secrets.PMS_CHANNEL_TOKEN }}
           LOYALTY_SERVICE_TOKEN: ${{ secrets.LOYALTY_SERVICE_TOKEN }}
+          # Read-only reporting credential (D14b). A SECRET, not a variable:
+          # it is a bearer credential, and the owner never needs to read it
+          # back — rotating it is minting a new one. It opens three GET
+          # endpoints (deposit-funnel, admin/stats, slips/agreement-report)
+          # and nothing else, so the weekly measurement pack stops reading
+          # production with superuser psql. Unset = the feature is off and
+          # the pack has no API path. docs/ops/weekly-pack-access.md
+          REPORT_READ_TOKEN:     ${{ secrets.REPORT_READ_TOKEN }}
         run: |
           set -euo pipefail
 
@@ -314,7 +322,7 @@ jobs:
           # (SLIPOK_*, PROMPTPAY_*_ID, BOOKING_NOTIFY_EMAIL_*, SLIP_RETENTION_DAYS,
           # AUDIT_LOG_RETENTION_DAYS, SLIP_ACCESS_LOG_RETENTION_DAYS,
           # LINE_PUSH_BUDGET_*, PMS_BASE_URL, PMS_CHANNEL_TOKEN,
-          # LOYALTY_SERVICE_TOKEN)
+          # LOYALTY_SERVICE_TOKEN, REPORT_READ_TOKEN)
           # are merged only when non-empty: the backend reads an empty value as
           # set, which would mint a QR with no receiving id, call SlipOK with no
           # key, mail nobody, run a retention sweep on a window nobody chose, or
@@ -368,6 +376,7 @@ jobs:
             --arg PMS_BASE_URL          "${PMS_BASE_URL:-}" \
             --arg PMS_CHANNEL_TOKEN     "${PMS_CHANNEL_TOKEN:-}" \
             --arg LOYALTY_SERVICE_TOKEN "${LOYALTY_SERVICE_TOKEN:-}" \
+            --arg REPORT_READ_TOKEN     "${REPORT_READ_TOKEN:-}" \
             '{
               commit_sha: $commit_sha,
               deploy_payload_b64: $deploy_payload_b64,
@@ -421,7 +430,8 @@ jobs:
                          SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS: $SLIPOK_DEGRADE_ALERT_COOLDOWN_MINS,
                          PMS_BASE_URL: $PMS_BASE_URL,
                          PMS_CHANNEL_TOKEN: $PMS_CHANNEL_TOKEN,
-                         LOYALTY_SERVICE_TOKEN: $LOYALTY_SERVICE_TOKEN }
+                         LOYALTY_SERVICE_TOKEN: $LOYALTY_SERVICE_TOKEN,
+                         REPORT_READ_TOKEN: $REPORT_READ_TOKEN }
                        | with_entries(select(.value != "")))' \
           | ssh -i ~/.ssh/deploy_key \
               -o StrictHostKeyChecking=yes \

@@ -136,13 +136,16 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/surveys", surveys::routes())
         .nest("/api/bookings", bookings::routes())
         .nest("/api/notifications", notifications::routes())
-        .nest("/api/admin", admin::routes())
+        .nest("/api/admin", admin::routes(state.clone()))
         .nest("/api/sse", sse::routes())
         .nest("/api/membership", membership::routes())
         .nest("/api/payments", payments::routes())
         .nest("/api/slips", slips::routes())
         .nest("/api/deposit", deposit_routes)
-        .nest("/api/analytics", analytics::routes())
+        // `routes` takes state because `/deposit-funnel` carries the
+        // report-read layer (D14b), which needs Redis for its budget and
+        // the pool for its audit row.
+        .nest("/api/analytics", analytics::routes(state.clone()))
         // PDPA data-subject rights (F3). The member's own surface: file a
         // request, read its status. The admin surface is merged into
         // `/api/admin` instead — except the access export, which is

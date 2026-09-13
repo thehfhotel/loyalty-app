@@ -14,7 +14,9 @@
 //! - `GET /profile-changes` - Get profile change analytics
 //! - `GET /user-engagement` - Get user engagement metrics
 //! - `GET /dashboard` - Get analytics dashboard summary
-//! - `GET /deposit-funnel` - Deposit-request funnel counters (task D6)
+//! - `GET /deposit-funnel` - Deposit-request funnel counters (task D6).
+//!   Also readable with `REPORT_READ_TOKEN` (task D14b) — the weekly
+//!   measurement pack's first section. See `docs/ops/weekly-pack-access.md`.
 
 use axum::{
     extract::{Extension, Query, State},
@@ -32,7 +34,10 @@ use sqlx::FromRow;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::middleware::auth::{auth_middleware, has_role, require_admin, AuthUser};
+use crate::middleware::auth::{auth_middleware, has_role, optional_auth_middleware, AuthUser};
+use crate::middleware::report_token::{
+    report_read_middleware, ReportAccess, ReportReadGuard, ReportRoute,
+};
 use crate::services::slip_confirm::SLIPOK_SYSTEM_USER_ID;
 use crate::state::AppState;
 
@@ -1158,13 +1163,19 @@ async fn get_analytics_dashboard(
 /// [`FrictionCounters`]. They are computed in the same pass as the stages
 /// above: no second query, and no counter that can drift from the funnel it
 /// sits beside.
+///
+/// ## Who may read it (task D14b)
+///
+/// An admin JWT, as always — or the synthetic read-only principal minted
+/// by `REPORT_READ_TOKEN`, because this endpoint *is* the first section of
+/// the weekly measurement pack. [`ReportAccess`] is the whole difference;
+/// the handler reads nothing about its caller beyond being allowed in, and
+/// writes nothing at all. See `docs/ops/weekly-pack-access.md`.
 async fn get_deposit_funnel(
     State(state): State<AppState>,
-    Extension(auth_user): Extension<AuthUser>,
+    _access: ReportAccess,
     Query(params): Query<DepositFunnelQuery>,
 ) -> Result<Json<DepositFunnelResponse>, AppError> {
-    require_admin(&auth_user)?;
-
     let granularity = parse_funnel_granularity(params.granularity.as_deref())?;
     let property = parse_funnel_property(params.property.as_deref())?;
     let (start_date, end_date) = resolve_funnel_range(
@@ -1796,7 +1807,31 @@ fn extract_top_fields(changes_by_field: &JsonValue, limit: usize) -> Vec<FieldCo
 /// - `GET /user-engagement` - Get user engagement metrics
 /// - `GET /dashboard` - Get analytics dashboard summary
 /// - `GET /deposit-funnel` - Deposit-request funnel counters (task D6)
-pub fn routes() -> Router<AppState> {
+pub fn routes(state: AppState) -> Router<AppState> {
+    // `/deposit-funnel` is the one route here the weekly measurement pack
+    // reads, so it is the one route that accepts `REPORT_READ_TOKEN`
+    // (task D14b). It therefore lives in its own sub-router with its own
+    // two layers instead of under the blanket `auth_middleware` below:
+    //
+    // * `report_read_middleware` OUTERMOST — it is added last, and axum
+    //   runs the last-added layer first. It must see the raw
+    //   `Authorization` header before anything tries to parse it as a JWT.
+    // * `optional_auth_middleware` INNERMOST — an admin JWT still
+    //   populates `AuthUser` exactly as before, and a bearer that is
+    //   neither credential simply produces no `AuthUser`, which
+    //   `ReportAccess` then turns into the same 401 `auth_middleware`
+    //   would have returned.
+    //
+    // `route_layer` rather than `layer`, so a 404 elsewhere under
+    // `/api/analytics` costs no Redis round trip.
+    let report_readable = Router::new()
+        .route("/deposit-funnel", get(get_deposit_funnel))
+        .route_layer(middleware::from_fn(optional_auth_middleware))
+        .route_layer(middleware::from_fn_with_state(
+            ReportReadGuard::new(&state, ReportRoute::DepositFunnel),
+            report_read_middleware,
+        ));
+
     Router::new()
         // User analytics endpoints
         .route("/coupon-usage", post(track_coupon_usage))
@@ -1806,8 +1841,11 @@ pub fn routes() -> Router<AppState> {
         .route("/profile-changes", get(get_profile_change_analytics))
         .route("/user-engagement", get(get_user_engagement_metrics))
         .route("/dashboard", get(get_analytics_dashboard))
-        .route("/deposit-funnel", get(get_deposit_funnel))
         .layer(middleware::from_fn(auth_middleware))
+        // Merged AFTER the blanket layer above, so that layer does not
+        // cover it. Merging before would put `auth_middleware` back in
+        // front of the report token and refuse it with a 401.
+        .merge(report_readable)
 }
 
 #[cfg(test)]

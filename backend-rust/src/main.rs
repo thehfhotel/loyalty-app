@@ -35,7 +35,7 @@ const SHUTDOWN_GRACE_PERIOD_SECS: u64 = 25;
 const DEFAULT_BODY_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 
 use loyalty_backend::{
-    config::{Environment, Settings},
+    config::{Environment, Settings, REPORT_READ_TOKEN_MIN_LEN},
     db,
     middleware::cors::{cors_layer, cors_layer_multiple_origins},
     redis::RedisManager,
@@ -659,6 +659,32 @@ fn log_startup_info(config: &Settings) {
         info!(
             "  PMS stay accrual: Not configured (LOYALTY_SERVICE_TOKEN unset) \
              — checkout stays from the PMS are refused"
+        );
+    }
+
+    // Read-only reporting credential (D14b). The weekly measurement pack's
+    // only sanctioned route into production numbers; unset, the pack has
+    // no API path at all. Never one character of the token — the boot log
+    // is the least-guarded place this process writes to, and this is a
+    // bearer credential. `docs/ops/weekly-pack-access.md`.
+    if config.report_read.is_configured() {
+        info!(
+            "  Report read token: configured — REPORT_READ_TOKEN opens \
+             GET /api/analytics/deposit-funnel, GET /api/admin/stats and \
+             GET /api/admin/slips/agreement-report, and nothing else"
+        );
+        if config.report_read.is_weak() {
+            warn!(
+                "  Report read token: shorter than {} characters. It is a \
+                 bearer credential on three production endpoints — mint a \
+                 long random one (`openssl rand -base64 36`).",
+                REPORT_READ_TOKEN_MIN_LEN
+            );
+        }
+    } else {
+        info!(
+            "  Report read token: not configured (REPORT_READ_TOKEN unset) \
+             — the weekly pack has no API path to production numbers"
         );
     }
 

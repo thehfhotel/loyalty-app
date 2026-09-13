@@ -151,6 +151,18 @@ services:
       # from PMS_CHANNEL_TOKEN above — one per direction. Blank = unset, so
       # stay accrual is refused rather than compared against an empty string.
       LOYALTY_SERVICE_TOKEN: ${LOYALTY_SERVICE_TOKEN:-}
+      # Read-only reporting credential (D14b). Opens exactly three GET
+      # endpoints — /api/analytics/deposit-funnel, /api/admin/stats and
+      # /api/admin/slips/agreement-report — to the weekly measurement pack,
+      # which otherwise has to read production with superuser psql and break
+      # this repo's own hard rule 5. It is NOT an admin login: every other
+      # admin route still answers 401 to it.
+      # Blank = the feature is off, which matters more here than on most of
+      # this list: this value is COMPARED AGAINST a caller's bearer token, so
+      # a `${VAR:-}` read literally would let `Authorization: Bearer ` (empty)
+      # authenticate as the report reader. `config::env_present` makes blank
+      # mean absent. Owner recipe: docs/ops/weekly-pack-access.md
+      REPORT_READ_TOKEN: ${REPORT_READ_TOKEN:-}
       # Rust-specific logging
       RUST_LOG: ${RUST_LOG:-info}
     # VOLUMES: Source mounts (./backend-rust:/app) are in docker-compose.dev.yml ONLY

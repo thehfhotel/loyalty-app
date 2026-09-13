@@ -123,7 +123,12 @@ which of our systems is having a bad day.
 GET /api/admin/slips/agreement-report?from=YYYY-MM-DD&to=YYYY-MM-DD&property=hf
 ```
 
-Admin only. All three parameters optional: the window defaults to the last
+Readable with an admin JWT **or** the read-only report token
+(`REPORT_READ_TOKEN` — see [`ops/weekly-pack-access.md`](ops/weekly-pack-access.md)),
+because the weekly measurement pack reports the agreement rate every week,
+which is the whole reason the shadow window is being run. Nobody else: a
+signed-in guest gets a `403`. All three parameters optional: the window
+defaults to the last
 **14 days** (Asia/Bangkok days), and omitting `property` reports both.
 `property` must be `hf` or `hfville` — anything else is a `400`, because an
 empty report reads exactly like "no disagreements".
