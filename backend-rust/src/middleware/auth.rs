@@ -187,17 +187,31 @@ impl IntoResponse for AuthError {
 
 /// Extract Bearer token from Authorization header
 fn extract_bearer_token(auth_header: &str) -> Result<&str, AuthError> {
-    // Check for "Bearer " prefix (case-insensitive)
-    if auth_header.len() < 7 {
+    const SCHEME: &str = "Bearer ";
+
+    // `str::get`, not `auth_header[..SCHEME.len()]`: the header is
+    // caller-supplied and byte 7 can land INSIDE a multi-byte character
+    // (`Bearerร…`), which indexing would panic on ("byte index 7 is not a
+    // char boundary"). `get` answers `None` there instead. Not
+    // `split_at_checked` either — that is stable since 1.80 and
+    // `clippy.toml` pins `msrv = "1.75"`, which `clippy::incompatible_msrv`
+    // enforces under `-D warnings`. Same pattern as
+    // `middleware::report_token::bearer`, which reads this same header.
+    let prefix = auth_header
+        .get(..SCHEME.len())
+        .ok_or(AuthError::MalformedHeader)?;
+
+    if !prefix.eq_ignore_ascii_case(SCHEME) {
         return Err(AuthError::MalformedHeader);
     }
 
-    let prefix = &auth_header[..7];
-    if !prefix.eq_ignore_ascii_case("bearer ") {
-        return Err(AuthError::MalformedHeader);
-    }
-
-    let token = auth_header[7..].trim();
+    // `get`, not `[SCHEME.len()..]`: mirrors the guard above rather than
+    // relying on it, so this line stays panic-free even if the prefix
+    // check above is ever refactored.
+    let token = auth_header
+        .get(SCHEME.len()..)
+        .ok_or(AuthError::MalformedHeader)?
+        .trim();
     if token.is_empty() {
         return Err(AuthError::MissingToken);
     }
@@ -418,6 +432,34 @@ mod tests {
     #[test]
     fn test_extract_bearer_token_malformed() {
         let result = extract_bearer_token("Basic abc123");
+        assert!(matches!(result, Err(AuthError::MalformedHeader)));
+    }
+
+    #[test]
+    fn test_extract_bearer_token_scheme_alone_is_malformed() {
+        // "Bearer" with no trailing space or token: shorter than the
+        // 7-byte scheme, so this must be `MalformedHeader`, not a panic
+        // and not `MissingToken`.
+        let result = extract_bearer_token("Bearer");
+        assert!(matches!(result, Err(AuthError::MalformedHeader)));
+    }
+
+    #[test]
+    fn test_extract_bearer_token_empty_header_is_malformed() {
+        let result = extract_bearer_token("");
+        assert!(matches!(result, Err(AuthError::MalformedHeader)));
+    }
+
+    #[test]
+    fn test_extract_bearer_token_multibyte_char_at_scheme_boundary_does_not_panic() {
+        // Regression test: byte index 7 (the length of "Bearer ") lands
+        // INSIDE the 3-byte UTF-8 encoding of "ร" here ("Bearer" is 6
+        // ASCII bytes, so "ร" starts at byte 6 and spans bytes 6-8).
+        // Naive `&auth_header[..7]` panics with "byte index 7 is not a
+        // char boundary"; `extract_bearer_token` must instead answer
+        // `MalformedHeader` for every request on every route behind
+        // `auth_middleware`.
+        let result = extract_bearer_token("Bearerร");
         assert!(matches!(result, Err(AuthError::MalformedHeader)));
     }
 
