@@ -244,8 +244,18 @@ fn bearer(headers: &axum::http::HeaderMap) -> Option<&str> {
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| {
-            let (scheme, token) = value.split_at_checked(SCHEME.len())?;
-            scheme.eq_ignore_ascii_case(SCHEME).then_some(token)
+            // `str::get`, not `value[..SCHEME.len()]`: the header is
+            // caller-supplied and byte 7 can land INSIDE a multi-byte
+            // character (`Bearerร…`), which indexing would panic on.
+            // `get` answers None there instead. Not `split_at_checked`
+            // either — that is stable since 1.80 and `clippy.toml` pins
+            // `msrv = "1.75"`, which `clippy::incompatible_msrv` enforces
+            // under `-D warnings`.
+            let scheme = value.get(..SCHEME.len())?;
+            if !scheme.eq_ignore_ascii_case(SCHEME) {
+                return None;
+            }
+            value.get(SCHEME.len()..)
         })
         .map(str::trim)
         .filter(|token| !token.is_empty())
