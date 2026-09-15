@@ -34,10 +34,14 @@ running container changes nothing.
 
 1. Settings → Secrets and variables → Actions → **Variables** → set
    `PDPA_CONTACT_EMAIL`.
-2. Push any commit to `main` (or re-run **CI Build & Deploy**) so the frontend
-   image is rebuilt. `ci-build-e2e.yml` passes it as the
-   `VITE_PDPA_CONTACT_EMAIL` build arg.
-3. Verify live: load `https://<host>/privacy` and confirm the contact card
+2. Merge a reviewed change to `main` that touches a file outside `**.md`,
+   `docs/**` and `.github/workflows/**`, then wait for **CI Build & Deploy**
+   (including **Verify Staging**) and **Deploy** to succeed for that commit.
+   Docs-only and workflow-only pushes are ignored; a manual **Run workflow**
+   dispatch skips staging and cannot reach production. `ci-build-e2e.yml`
+   passes the address as the `VITE_PDPA_CONTACT_EMAIL` build arg.
+3. Verify production `/api/health` reports that commit's `revision`, then load
+   `https://<host>/privacy` and confirm the contact card
    shows the address rather than the desk fallback.
 
 ---

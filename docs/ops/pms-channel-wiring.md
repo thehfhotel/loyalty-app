@@ -198,12 +198,16 @@ it is the rollback.
 
 ### 5. Deploy both repos
 
-Neither secret reaches a container until its repo deploys. loyalty-app:
+Neither secret reaches a container until its repo deploys. For loyalty-app,
+merge a reviewed change to `main` that touches a file outside `**.md`, `docs/**`
+and `.github/workflows/**`. Wait for **CI Build & Deploy** (including **Verify
+Staging**) and the subsequent **Deploy** run for that commit to succeed, then
+confirm production `/api/health` reports its `revision`.
 
-```bash
-gh workflow run deploy.yml --repo thehfhotel/loyalty-app --ref main
-gh run watch --repo thehfhotel/loyalty-app
-```
+`deploy.yml` has no manual-dispatch trigger. Manually dispatching **CI Build &
+Deploy** does not substitute for a push either: staging and the production
+prerequisite guard require a push event. Docs-only and workflow-only pushes
+are ignored by the build workflow.
 
 new-hotel deploys on a push to `master`, so its go-live is whatever the next
 push is — or run its ship skill (`/ship`) to trigger one deliberately. Until
@@ -297,8 +301,13 @@ Blank the variable and redeploy. That is the whole rollback:
 
 ```bash
 gh variable set PMS_BASE_URL --repo thehfhotel/loyalty-app --body ''
-gh workflow run deploy.yml --repo thehfhotel/loyalty-app --ref main
 ```
+
+Then use the eligible-push deployment path in **5. Deploy both repos** above
+and verify the production revision. With the token still set, the startup
+message is `PMS Channel: HALF configured` and names the missing `PMS_BASE_URL`;
+with both absent it is `PMS Channel: Not configured`. Changing the variable
+alone does not alter the running app.
 
 A blank reads as **unset**, not as an empty URL, so the channel goes dark and
 bookings fall back to the front desk. It does not bring the backend down — which
