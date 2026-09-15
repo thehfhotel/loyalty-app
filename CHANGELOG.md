@@ -11,6 +11,18 @@ merging that PR is what tags `vX.Y.Z` and publishes the GitHub release.
 Entries below the generated sections are the earlier hand-written, dated
 format, kept verbatim for history.
 
+## [4.8.0](https://github.com/thehfhotel/loyalty-app/compare/v4.7.0...v4.8.0) (2026-09-15)
+
+
+### Features
+
+* **reports:** a sanctioned read-only path for the weekly measurement pack (D14b) ([#451](https://github.com/thehfhotel/loyalty-app/issues/451)) ([545bc2d](https://github.com/thehfhotel/loyalty-app/commit/545bc2d437878239e6d84434ba6d9da08acdb92b))
+
+
+### Bug Fixes
+
+* **auth:** panic-free bearer-token scheme check on a multi-byte boundary ([#453](https://github.com/thehfhotel/loyalty-app/issues/453)) ([ff77bbd](https://github.com/thehfhotel/loyalty-app/commit/ff77bbd9eff48d1c8b25ea2b4781a34a5f401510))
+
 ## [4.7.0](https://github.com/thehfhotel/loyalty-app/compare/v4.6.0...v4.7.0) (2026-09-12)
 
 
