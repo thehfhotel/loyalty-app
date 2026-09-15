@@ -83,6 +83,6 @@
   "overrides": {
     "glob": "^11.0.3",
     "minimatch": "^10.2.3",
-    "js-yaml": "^4.3.0"
+    "js-yaml": "^4.3.2"
   }
 }
