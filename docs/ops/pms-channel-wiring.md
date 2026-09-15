@@ -209,9 +209,10 @@ Deploy** does not substitute for a push either: staging and the production
 prerequisite guard require a push event. Docs-only and workflow-only pushes
 are ignored by the build workflow.
 
-new-hotel deploys on a push to `master`, so its go-live is whatever the next
-push is — or run its ship skill (`/ship`) to trigger one deliberately. Until
-that deploy runs, `/home/deploy/secrets/loyalty_channel_token` is still the
+For new-hotel, merge a reviewed deployment-triggering change to `master`, such
+as a backend or compose change; its workflow skips deployment for docs-only
+changes. Verify the resulting deploy before checking its startup log below.
+Until that deploy runs, `/home/deploy/secrets/loyalty_channel_token` is still the
 empty file it has been since #296. While the channel flag is off the PMS
 answers `503 channel_disabled` even if the token is absent or wrong; a `401`
 only becomes possible after the flag is on.
@@ -262,9 +263,10 @@ Want:
   PMS stay accrual: Enabled (LOYALTY_SERVICE_TOKEN set)
 ```
 
-Before the switch-on it reads `PMS Channel: Not configured (...) — availability
-and holds go to the desk`. The line names the **host only** — never the path,
-never any part of the token.
+With both `PMS_BASE_URL` and `PMS_CHANNEL_TOKEN` unset it reads
+`PMS Channel: Not configured (...) — availability and holds go to the desk`.
+The configured line names the **host only** — never the path or any part of
+the token.
 
 A `PMS Channel: HALF configured` warning means one of the two got set and the
 other did not. Fix that before going further: it looks configured and sends
