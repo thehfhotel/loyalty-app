@@ -121,6 +121,13 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      # init and analyze share a versioned configuration; update them together.
+      codeql:
+        patterns:
+          - "github/codeql-action/*"
+        update-types:
+          - "minor"
+          - "patch"
 
   # Docker Base Images
   - package-ecosystem: "docker"
