@@ -118,16 +118,18 @@ test.describe('Profile flow (browser)', () => {
   test('Profile validation errors surface in modal', async ({ page }) => {
     // Click edit button (Thai: "แก้ไขการตั้งค่า")
     await page.getByRole('button', { name: /edit settings|แก้ไขการตั้งค่า/i }).click();
+    const dialog = page.getByRole('dialog', { name: /แก้ไขโปรไฟล์|edit profile/i });
+    await expect(dialog).toBeVisible();
 
     // Clear first name and fill invalid phone
-    await page.getByLabel(/first name|ชื่อ/i).first().fill('');
-    await page.getByLabel(/phone|โทรศัพท์/i).fill('abc');
+    await dialog.getByLabel(/first name|ชื่อ/i).first().fill('');
+    await dialog.getByLabel(/phone|โทรศัพท์/i).fill('abc');
     // Click save (Thai: "บันทึก")
-    await page.getByRole('button', { name: /save|บันทึก/i }).click();
+    await dialog.getByRole('button', { name: /save|บันทึก/i }).click();
 
-    // Check validation error messages (Thai: "กรุณากรอกชื่อ", "หมายเลขโทรศัพท์ไม่ถูกต้อง")
-    await expect(page.getByText(/first name.*required|กรุณากรอกชื่อ|name is required/i)).toBeVisible();
-    await expect(page.getByText(/valid phone|โทรศัพท์.*ไม่ถูกต้อง|phone.*invalid/i)).toBeVisible();
+    // Require inline field errors; the toast repeats the phone error outside the dialog.
+    await expect(dialog.getByText(/first name.*required|กรุณากรอกชื่อ|name is required/i)).toBeVisible();
+    await expect(dialog.getByText(/valid phone|โทรศัพท์.*ไม่ถูกต้อง|phone.*invalid/i)).toBeVisible();
   });
 
   test('Upload profile picture updates avatar', async ({ page }) => {
