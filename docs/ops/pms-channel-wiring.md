@@ -212,8 +212,9 @@ are ignored by the build workflow.
 new-hotel deploys on a push to `master`, so its go-live is whatever the next
 push is — or run its ship skill (`/ship`) to trigger one deliberately. Until
 that deploy runs, `/home/deploy/secrets/loyalty_channel_token` is still the
-empty file it has been since #296, and the PMS will answer `401` to a loyalty
-app that now holds a token.
+empty file it has been since #296. While the channel flag is off the PMS
+answers `503 channel_disabled` even if the token is absent or wrong; a `401`
+only becomes possible after the flag is on.
 
 Order does not matter, because the channel is still closed at the PMS end by the
 flag. Both directions stay dark until step 6.
@@ -221,9 +222,9 @@ flag. Both directions stay dark until step 6.
 ### 6. Flip the flag — a separate, later decision (B10/B11)
 
 Everything above is provisioning; this is the go-live, and it is the only step
-guests can see. The loyalty app can now reach the PMS and authenticate, but the
-PMS still answers `503 channel_disabled` to everyone, including a perfectly
-valid token.
+guests can see. Provisioning lets the loyalty app reach the PMS with its
+configured token, but the PMS still answers `503 channel_disabled` to everyone.
+That response does not prove the two token values match.
 
 `LOYALTY_CHANNEL_ENABLED` is **not** a repository variable and `gh variable set`
 will not move it. It is compose-owned under new-hotel's ADR 0004, because it
@@ -269,7 +270,17 @@ A `PMS Channel: HALF configured` warning means one of the two got set and the
 other did not. Fix that before going further: it looks configured and sends
 every booking to the desk anyway.
 
-### b. The route actually carries
+### b. The PMS loaded its token
+
+```bash
+ssh evergreen 'docker logs new-hotel-production-backend-1 2>&1 | grep "Loyalty channel:"'
+```
+
+Before the channel opens, expect `enabled=false (token set: true)`. This proves
+the PMS loaded a non-empty token; it does not prove that it matches the loyalty
+app's value. The disabled route deliberately does not check credentials.
+
+### c. The route actually carries
 
 ```bash
 ssh evergreen 'curl -s -o - -w "\n%{http_code}\n" \
@@ -279,7 +290,7 @@ ssh evergreen 'curl -s -o - -w "\n%{http_code}\n" \
 | You get | It means |
 |---|---|
 | `503` + `{"reason":"channel_disabled"}` | **Correct**, before step 6. The request reached the PMS channel router and the PMS's own flag turned it away. |
-| `401` | The route works and the flag is already on, but the token is wrong — token A does not match on the two sides. |
+| `401` | The route works and the flag is already on. This probe sends no token, so it is expected to fail authentication; it does not test whether the configured values match. |
 | `404` + HTML | The request landed on the Next.js app, not the channel router. The proxy rewrite is gone. |
 | connection refused / timeout | No route. Check `extra_hosts` survived the deploy: `docker inspect loyalty_backend_production --format '{{.HostConfig.ExtraHosts}}'`. |
 
@@ -287,7 +298,7 @@ Note the `503` is returned **before** the token is checked (new-hotel's
 `check_channel_access` gates on the flag first), which is what makes this a safe
 check to run with no credentials at all.
 
-### c. End to end, after step 6
+### d. End to end, after step 6
 
 Book a test stay through `loyalty.saichon.com` and confirm the hold appears in
 the PMS. Coordinate with reception first — this creates a real hold on a real
