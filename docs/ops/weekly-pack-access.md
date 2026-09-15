@@ -79,13 +79,19 @@ needs to be pasted into a chat, an issue, or a commit.
 ### 2. Redeploy
 
 The secret reaches the container through `deploy.yml`'s jq payload →
-`.env` → compose `environment:`. Nothing picks it up without a deploy:
+`.env` → compose `environment:`. It takes effect on the next eligible push to
+`main`: merge a reviewed change that touches a file outside `**.md`, `docs/**`
+and `.github/workflows/**`. A docs-only or workflow-only push is ignored by
+`ci-build-e2e.yml` and does not deploy.
 
-```bash
-gh workflow run "CI Build & Deploy" --repo thehfhotel/loyalty-app --ref main
-```
+Wait for **CI Build & Deploy** (including **Verify Staging**) and the subsequent
+**Deploy** run for that commit to succeed. A manual **Run workflow** dispatch
+does not deploy: staging requires a push, and `deploy.yml` also requires the
+completed build's event to be `push`.
 
-…or simply merge anything to `main`, which is what normally fires it.
+Confirm `/api/health` on production reports that commit's `revision`, then
+check the configuration message below. Full checks:
+[`production-approval-checklist.md`](../production-approval-checklist.md).
 
 ### 3. Read back that it took
 
